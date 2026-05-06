@@ -6,7 +6,7 @@ import { Toaster } from 'react-hot-toast'
 
 export const metadata: Metadata = {
   title: 'The Real Medico — Medical Merchandise Store',
-  description: 'Premium medical-themed merchandise for healthcare professionals. T-shirts, hoodies, mugs and more.',
+  description: 'Premium medical-themed merchandise for healthcare professionals.',
   keywords: 'medical merchandise, doctor gifts, nurse gifts, medical apparel',
   openGraph: {
     title: 'The Real Medico',
@@ -22,6 +22,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <script
+          src="https://checkout.razorpay.com/v1/checkout.js"
+          async
+        />
+      </head>
       <body>
         <Navbar />
         <main className="min-h-screen">
@@ -29,9 +35,7 @@ export default function RootLayout({
         </main>
         <Footer />
         <Toaster position="bottom-right" />
-            <body>
-        <script src="https://checkout.razorpay.com/v1/checkout.js" />
-
+      </body>
     </html>
   )
 }
