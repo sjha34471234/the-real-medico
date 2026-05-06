@@ -2,46 +2,34 @@
 import { useEffect, useState } from 'react'
 import ProductCard from './ProductCard'
 
-const MOCK_PRODUCTS = [
+const FALLBACK_PRODUCTS = [
   {
     id: '1', title: 'Medical Heartbeat Tee', price: 29.99,
     image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Medical+Tee',
-    category: 'tshirts', description: 'Classic medical heartbeat design'
+    images: [], category: 'tshirts',
+    description: 'Classic medical heartbeat design',
+    variants: [{ id: 'default', title: 'M', price: 29.99, available: true }],
   },
   {
     id: '2', title: 'Doctor Life Hoodie', price: 49.99,
     image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Doctor+Hoodie',
-    category: 'hoodies', description: 'Cozy hoodie for long shifts'
+    images: [], category: 'hoodies',
+    description: 'Cozy hoodie for long shifts',
+    variants: [{ id: 'default', title: 'M', price: 49.99, available: true }],
   },
   {
     id: '3', title: 'Stethoscope Mug', price: 19.99,
     image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Medico+Mug',
-    category: 'mugs', description: 'Start your shift right'
+    images: [], category: 'mugs',
+    description: 'Start your shift right',
+    variants: [{ id: 'default', title: 'One Size', price: 19.99, available: true }],
   },
   {
     id: '4', title: 'Nurse Pride Tee', price: 27.99,
     image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Nurse+Tee',
-    category: 'tshirts', description: 'For the heroes in scrubs'
-  },
-  {
-    id: '5', title: 'Anatomy Poster Tee', price: 31.99,
-    image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Anatomy+Tee',
-    category: 'tshirts', description: 'Science meets style'
-  },
-  {
-    id: '6', title: 'Med School Survivor', price: 45.99,
-    image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Med+School',
-    category: 'hoodies', description: 'You earned this'
-  },
-  {
-    id: '7', title: 'Coffee & Patients Mug', price: 18.99,
-    image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Coffee+Mug',
-    category: 'mugs', description: 'Fueled by caffeine'
-  },
-  {
-    id: '8', title: 'Real Medico Cap', price: 24.99,
-    image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Medico+Cap',
-    category: 'accessories', description: 'Rep the brand'
+    images: [], category: 'tshirts',
+    description: 'For the heroes in scrubs',
+    variants: [{ id: 'default', title: 'M', price: 27.99, available: true }],
   },
 ]
 
@@ -51,14 +39,55 @@ interface Props {
 }
 
 export default function ProductGrid({ featured, category }: Props) {
-  const [products, setProducts] = useState(MOCK_PRODUCTS)
+  const [products, setProducts] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let filtered = MOCK_PRODUCTS
-    if (featured) filtered = filtered.slice(0, 4)
-    if (category) filtered = filtered.filter(p => p.category === category)
-    setProducts(filtered)
+    const fetchProducts = async () => {
+      try {
+        const res = await fetch('/api/printify/products')
+        const data = await res.json()
+
+        let prods = data.products?.length > 0
+          ? data.products
+          : FALLBACK_PRODUCTS
+
+        if (category) {
+          prods = prods.filter((p: any) =>
+            p.category?.toLowerCase().includes(category.toLowerCase())
+          )
+        }
+        if (featured) prods = prods.slice(0, 4)
+
+        setProducts(prods)
+      } catch {
+        let fallback = FALLBACK_PRODUCTS
+        if (featured) fallback = fallback.slice(0, 4)
+        setProducts(fallback)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchProducts()
   }, [featured, category])
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="card animate-pulse">
+            <div className="w-full h-56 bg-slate-200" />
+            <div className="p-4 space-y-3">
+              <div className="h-4 bg-slate-200 rounded w-3/4" />
+              <div className="h-3 bg-slate-200 rounded w-1/2" />
+              <div className="h-8 bg-slate-200 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   if (products.length === 0) {
     return (
