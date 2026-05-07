@@ -35,8 +35,9 @@ export async function POST(req: Request) {
     if (items && customer) {
       try {
         // Get user by email
-        const { data: userData } = await supabaseAdmin.auth.admin.listUsers()
-        const user = userData?.users?.find(u => u.email === customer.email)
+       const { data: userData } = await supabaseAdmin.auth.admin.listUsers()
+const user = userData?.users?.find((u: any) => u.email === customer.email)
+
 
         await supabaseAdmin.from('orders').insert({
           user_id: user?.id || null,
