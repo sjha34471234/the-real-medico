@@ -142,10 +142,17 @@ export default function ProductDetailPage() {
               <button onClick={() => setQuantity(quantity + 1)} className="font-bold text-lg w-6">+</button>
             </div>
           </div>
-          <div className="flex gap-4">
-            <button onClick={handleAddToCart} className="btn-primary flex-1">Add to Cart</button>
-            <Link href="/cart" className="btn-secondary flex-1 text-center">View Cart</Link>
-          </div>
+          <div className="flex gap-3">
+  <button onClick={handleAddToCart} className="btn-primary flex-1">Add to Cart</button>
+  <WishlistButton product={{
+    id: product.id,
+    title: product.title,
+    image: product.image,
+    price: selectedVariant?.price || product.price,
+  }} />
+</div>
+<Link href="/cart" className="btn-secondary w-full text-center block">View Cart</Link>
+
           <div className="bg-accent rounded-xl p-4 space-y-2 text-sm text-text-slate">
             <p>🚚 Free shipping on orders over ₹2000</p>
             <p>🖨️ Printed on demand — ships in 3-5 business days</p>
