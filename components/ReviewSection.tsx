@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import toast from 'react-hot-toast'
+import Link from 'next/link'
 
 const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,6 +17,7 @@ interface Review {
   reviewer_name: string
   is_member: boolean
   upvotes: number
+  verified_purchase: boolean
   created_at: string
   userUpvoted?: boolean
 }
@@ -25,6 +27,8 @@ export default function ReviewSection({ productId }: { productId: string }) {
   const [loading, setLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
   const [isMember, setIsMember] = useState(false)
+  const [hasPurchased, setHasPurchased] = useState(false)
+  const [checkingPurchase, setCheckingPurchase] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ rating: 5, title: '', body: '' })
   const [submitting, setSubmitting] = useState(false)
@@ -33,8 +37,10 @@ export default function ReviewSection({ productId }: { productId: string }) {
     const init = async () => {
       const supabase = getSupabase()
       const { data: { session } } = await supabase.auth.getSession()
+
       if (session?.user) {
         setUser(session.user)
+
         // Check membership
         const { data: membership } = await supabase
           .from('memberships')
@@ -43,7 +49,23 @@ export default function ReviewSection({ productId }: { productId: string }) {
           .eq('active', true)
           .single()
         if (membership) setIsMember(true)
+
+        // Check if user has purchased this product
+        const { data: orders } = await supabase
+          .from('orders')
+          .select('line_items')
+          .eq('user_id', session.user.id)
+          .eq('status', 'confirmed')
+
+        if (orders && orders.length > 0) {
+          const purchased = orders.some((order: any) => {
+            const items = order.line_items || []
+            return items.some((item: any) => item.productId === productId)
+          })
+          setHasPurchased(purchased)
+        }
       }
+      setCheckingPurchase(false)
       await loadReviews(session?.user?.id)
     }
     init()
@@ -78,12 +100,21 @@ export default function ReviewSection({ productId }: { productId: string }) {
     if (userUpvoted) {
       await supabase.from('review_upvotes').delete()
         .eq('user_id', user.id).eq('review_id', reviewId)
-      await supabase.from('reviews').update({ upvotes: reviews.find(r => r.id === reviewId)!.upvotes - 1 }).eq('id', reviewId)
-      setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, upvotes: r.upvotes - 1, userUpvoted: false } : r))
+      await supabase.from('reviews')
+        .update({ upvotes: reviews.find(r => r.id === reviewId)!.upvotes - 1 })
+        .eq('id', reviewId)
+      setReviews(prev => prev.map(r =>
+        r.id === reviewId ? { ...r, upvotes: r.upvotes - 1, userUpvoted: false } : r
+      ))
     } else {
-      await supabase.from('review_upvotes').insert({ user_id: user.id, review_id: reviewId })
-      await supabase.from('reviews').update({ upvotes: reviews.find(r => r.id === reviewId)!.upvotes + 1 }).eq('id', reviewId)
-      setReviews(prev => prev.map(r => r.id === reviewId ? { ...r, upvotes: r.upvotes + 1, userUpvoted: true } : r))
+      await supabase.from('review_upvotes')
+        .insert({ user_id: user.id, review_id: reviewId })
+      await supabase.from('reviews')
+        .update({ upvotes: reviews.find(r => r.id === reviewId)!.upvotes + 1 })
+        .eq('id', reviewId)
+      setReviews(prev => prev.map(r =>
+        r.id === reviewId ? { ...r, upvotes: r.upvotes + 1, userUpvoted: true } : r
+      ))
     }
   }
 
@@ -99,12 +130,13 @@ export default function ReviewSection({ productId }: { productId: string }) {
       body: form.body,
       reviewer_name: user.user_metadata?.name || user.email.split('@')[0],
       is_member: isMember,
+      verified_purchase: hasPurchased,
       upvotes: 0,
     })
     if (error) {
       toast.error('Failed to submit review')
     } else {
-      toast.success('Review submitted!')
+      toast.success('Review submitted! ✅')
       setForm({ rating: 5, title: '', body: '' })
       setShowForm(false)
       await loadReviews(user.id)
@@ -116,45 +148,70 @@ export default function ReviewSection({ productId }: { productId: string }) {
     ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
     : null
 
+  // Decide what to show for the write review button
+  const renderReviewButton = () => {
+    if (!user) return (
+      <Link href="/account" className="btn-secondary text-sm py-2 px-4">
+        Sign in to Review
+      </Link>
+    )
+    if (checkingPurchase) return (
+      <div className="text-sm text-text-slate">Checking purchase...</div>
+    )
+    if (!hasPurchased) return (
+      <div className="text-right">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-sm text-amber-700 inline-flex items-center gap-2">
+          🛒 Purchase this product to write a review
+        </div>
+      </div>
+    )
+    return (
+      <button
+        onClick={() => setShowForm(!showForm)}
+        className="btn-primary text-sm py-2 px-4"
+      >
+        {showForm ? 'Cancel' : '+ Write Review'}
+      </button>
+    )
+  }
+
   return (
     <div className="mt-12">
       <div className="border-t pt-10">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="text-2xl font-heading font-bold text-text-dark">
               Customer Reviews
             </h2>
-            {avgRating && (
+            {avgRating ? (
               <div className="flex items-center gap-2 mt-1">
                 <div className="flex">
                   {[1,2,3,4,5].map(s => (
                     <span key={s} className={s <= Math.round(Number(avgRating)) ? 'text-yellow-400' : 'text-slate-200'}>★</span>
                   ))}
                 </div>
-                <span className="font-bold text-text-dark">{avgRating}</span>
-                <span className="text-text-slate text-sm">({reviews.length} review{reviews.length !== 1 ? 's' : ''})</span>
+                <span className="font-bold">{avgRating}</span>
+                <span className="text-text-slate text-sm">
+                  ({reviews.length} review{reviews.length !== 1 ? 's' : ''})
+                </span>
               </div>
+            ) : (
+              <p className="text-text-slate text-sm mt-1">No reviews yet</p>
             )}
           </div>
-          {user ? (
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="btn-primary text-sm py-2 px-4"
-            >
-              {showForm ? 'Cancel' : '+ Write Review'}
-            </button>
-          ) : (
-            <a href="/account" className="btn-secondary text-sm py-2 px-4">
-              Sign in to Review
-            </a>
-          )}
+          {renderReviewButton()}
         </div>
 
         {/* Write Review Form */}
-        {showForm && user && (
+        {showForm && user && hasPurchased && (
           <div className="card p-6 mb-8 border-2 border-primary">
-            <h3 className="font-bold mb-4">Write Your Review</h3>
+            <div className="flex items-center gap-2 mb-4">
+              <h3 className="font-bold">Write Your Review</h3>
+              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                ✅ Verified Purchase
+              </span>
+            </div>
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-text-slate mb-2 block">Rating</label>
@@ -209,7 +266,7 @@ export default function ReviewSection({ productId }: { productId: string }) {
           <div className="text-center py-12 text-text-slate">
             <div className="text-4xl mb-3">💬</div>
             <p className="font-medium">No reviews yet</p>
-            <p className="text-sm mt-1">Be the first to review this product!</p>
+            <p className="text-sm mt-1">Be the first to review after purchasing!</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -217,26 +274,31 @@ export default function ReviewSection({ productId }: { productId: string }) {
               <div key={review.id} className="card p-5">
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm">
+                    <div className="w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
                       {review.reviewer_name?.[0]?.toUpperCase() || '?'}
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-semibold text-sm">{review.reviewer_name}</span>
                         {review.is_member && (
                           <span className="bg-primary text-white text-xs px-2 py-0.5 rounded-full font-bold">
                             ⭐ Member
                           </span>
                         )}
+                        {review.verified_purchase && (
+                          <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">
+                            ✅ Verified Purchase
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 mt-0.5">
                         {[1,2,3,4,5].map(s => (
                           <span key={s} className={`text-sm ${s <= review.rating ? 'text-yellow-400' : 'text-slate-200'}`}>★</span>
                         ))}
                       </div>
                     </div>
                   </div>
-                  <span className="text-text-slate text-xs">
+                  <span className="text-text-slate text-xs flex-shrink-0">
                     {new Date(review.created_at).toLocaleDateString()}
                   </span>
                 </div>
