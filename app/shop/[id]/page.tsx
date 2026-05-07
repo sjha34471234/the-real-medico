@@ -4,6 +4,8 @@ import { useParams } from 'next/navigation'
 import useCartStore from '@/store/cartStore'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
+import WishlistButton from '@/components/WishlistButton'
+import ReviewSection from '@/components/ReviewSection'
 
 const FALLBACK = [
   { id: '1', title: 'Medical Heartbeat Tee', price: 29.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Medical+Tee', description: 'Classic medical heartbeat design', variants: [{ id: 'S', title: 'S', price: 29.99, available: true }, { id: 'M', title: 'M', price: 29.99, available: true }, { id: 'L', title: 'L', price: 29.99, available: true }] },
