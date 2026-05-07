@@ -283,10 +283,59 @@ export default function AccountPage() {
                 <div className="text-4xl font-black mb-1">$5<span className="text-xl font-normal text-blue-200">/month</span></div>
                 <p className="text-blue-200 text-sm mb-6">Cancel anytime</p>
                 <button
-                  onClick={() => {
-                    setIsMember(true)
-                    toast.success('Welcome to Real Medico+! 🎉')
-                  }}
+                 onClick={async () => {
+  try {
+    const res = await fetch('/api/razorpay/subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: user.email,
+        name: user.user_metadata?.name || '',
+      }),
+    })
+    const orderData = await res.json()
+    if (!orderData.order_id) throw new Error('Failed to create order')
+
+    const options = {
+      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+      amount: orderData.amount,
+      currency: orderData.currency,
+      name: 'The Real Medico',
+      description: 'Real Medico+ Monthly Membership',
+      order_id: orderData.order_id,
+      prefill: {
+        email: user.email,
+        name: user.user_metadata?.name || '',
+      },
+      theme: { color: '#1A3A8F' },
+      handler: async (response: any) => {
+        const verifyRes = await fetch('/api/razorpay/verify-subscription', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...response,
+            user_email: user.email,
+          }),
+        })
+        const verifyData = await verifyRes.json()
+        if (verifyData.verified) {
+          setIsMember(true)
+          toast.success('Welcome to Real Medico+! 🎉')
+        } else {
+          toast.error('Payment verification failed')
+        }
+      },
+      modal: {
+        ondismiss: () => toast('Payment cancelled', { icon: 'ℹ️' }),
+      },
+    }
+    const rzp = new (window as any).Razorpay(options)
+    rzp.open()
+  } catch (err) {
+    toast.error('Something went wrong. Please try again.')
+  }
+}}
+
                   className="bg-white text-primary font-bold px-8 py-3 rounded-xl hover:bg-accent transition-all w-full text-center"
                 >
                   Join Real Medico+ →
