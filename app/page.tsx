@@ -6,44 +6,37 @@ import toast from 'react-hot-toast'
 
 export default function HomePage() {
   const [email, setEmail] = useState('')
-  const [subscribing, setSubscribing] = useState(false)
 
   const handleSubscribe = async () => {
-    if (!email) { toast.error('Enter your email'); return }
-    setSubscribing(true)
+    if (!email) return
     try {
-      const res = await fetch('/api/newsletter', {
+      await fetch('/api/newsletter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       })
-      if (res.ok) {
-        toast.success('Subscribed!')
-        setEmail('')
-      } else {
-        toast.error('Already subscribed or error')
-      }
+      toast.success('Subscribed!')
+      setEmail('')
     } catch {
-      toast.error('Something went wrong')
+      toast.error('Error')
     }
-    setSubscribing(false)
   }
 
   return (
     <div>
       <section className="bg-gradient-to-br from-primary to-primary-dark text-white py-20 px-4">
         <div className="max-w-6xl mx-auto text-center">
-          <h1 className="text-4xl md:text-6xl font-heading font-black mb-6 leading-tight">
-            Wear Your Passion<br />for Medicine
+          <h1 className="text-4xl md:text-6xl font-heading font-black mb-6">
+            Wear Your Passion for Medicine
           </h1>
-          <p className="text-xl md:text-2xl mb-8 text-blue-100 max-w-2xl mx-auto">
-            Premium merchandise for healthcare heroes. Designed with pride, built for comfort.
+          <p className="text-xl mb-8 text-blue-100 max-w-2xl mx-auto">
+            Premium merchandise for healthcare heroes.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/shop" className="bg-white text-primary px-8 py-4 rounded-xl font-bold text-lg hover:bg-accent transition-all">
+            <Link href="/shop" className="bg-white text-primary px-8 py-4 rounded-xl font-bold text-lg">
               Shop Now
             </Link>
-            <Link href="/about" className="border-2 border-white text-white px-8 py-4 rounded-xl font-bold text-lg hover:bg-white hover:text-primary transition-all">
+            <Link href="/about" className="border-2 border-white text-white px-8 py-4 rounded-xl font-bold text-lg">
               Our Story
             </Link>
           </div>
@@ -56,17 +49,21 @@ export default function HomePage() {
             How It Works
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              { step: '01', title: 'Browse', desc: 'Explore our medical-themed collection designed for healthcare professionals.' },
-              { step: '02', title: 'Order', desc: 'Choose your size, color and quantity. Secure checkout in seconds.' },
-              { step: '03', title: 'Delivered', desc: 'Your order is printed and shipped directly to your door.' },
-            ].map((item) => (
-              <div key={item.step} className="text-center p-6 bg-white rounded-2xl shadow-sm">
-                <div className="text-5xl font-black text-primary mb-4">{item.step}</div>
-                <h3 className="text-xl font-bold mb-2">{item.title}</h3>
-                <p className="text-text-slate">{item.desc}</p>
-              </div>
-            ))}
+            <div className="text-center p-6 bg-white rounded-2xl shadow-sm">
+              <div className="text-5xl font-black text-primary mb-4">01</div>
+              <h3 className="text-xl font-bold mb-2">Browse</h3>
+              <p className="text-text-slate">Explore our medical-themed collection.</p>
+            </div>
+            <div className="text-center p-6 bg-white rounded-2xl shadow-sm">
+              <div className="text-5xl font-black text-primary mb-4">02</div>
+              <h3 className="text-xl font-bold mb-2">Order</h3>
+              <p className="text-text-slate">Choose size and quantity. Secure checkout.</p>
+            </div>
+            <div className="text-center p-6 bg-white rounded-2xl shadow-sm">
+              <div className="text-5xl font-black text-primary mb-4">03</div>
+              <h3 className="text-xl font-bold mb-2">Delivered</h3>
+              <p className="text-text-slate">Printed and shipped to your door.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -89,3 +86,30 @@ export default function HomePage() {
       </section>
 
       <section className="py-16 bg-primary text-white px-4">
+        <div className="max-w-xl mx-auto text-center">
+          <h2 className="text-3xl font-heading font-bold mb-4">
+            Stay in the Loop
+          </h2>
+          <p className="text-blue-100 mb-8">
+            Exclusive offers for healthcare workers.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <input
+              type="email"
+              placeholder="Your email address"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="flex-1 px-4 py-3 rounded-lg text-text-dark focus:outline-none"
+            />
+            <button
+              onClick={handleSubscribe}
+              className="bg-white text-primary px-6 py-3 rounded-lg font-bold"
+            >
+              Subscribe
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
