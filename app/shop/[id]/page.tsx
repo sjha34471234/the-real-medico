@@ -159,6 +159,8 @@ export default function ProductDetailPage() {
             <p>↩️ 30-day return policy</p>
           </div>
         </div>
+        <ReviewSection productId={product.id} />
+        
       </div>
     </div>
   )
