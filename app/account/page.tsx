@@ -198,20 +198,11 @@ export default function AccountPage() {
         </div>
       )}
 
-      {/* WISHLIST */}
-      {activeTab === 'wishlist' && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-bold">My Wishlist</h2>
-          <div className="card p-12 text-center">
-            <div className="text-5xl mb-4">❤️</div>
-            <p className="text-text-slate font-medium mb-2">Your wishlist is empty</p>
-            <p className="text-text-slate text-sm mb-6">Save products you love for later</p>
-            <Link href="/shop" className="btn-primary inline-block">
-              Browse Products
-            </Link>
-          </div>
-        </div>
-      )}
+     {/* WISHLIST */}
+{activeTab === 'wishlist' && (
+  <WishlistTab userId={user.id} />
+)}
+
 
       {/* REVIEWS */}
       {activeTab === 'reviews' && (
