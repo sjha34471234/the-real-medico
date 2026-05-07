@@ -89,7 +89,11 @@ export default function ProductDetailPage() {
             <h1 className="text-3xl font-heading font-bold text-text-dark mb-2">{product.title}</h1>
             <p className="text-3xl font-bold text-primary">${selectedVariant?.price || product.price}</p>
           </div>
-          <p className="text-text-slate leading-relaxed">{product.description}</p>
+          <div 
+  className="text-text-slate leading-relaxed prose prose-sm max-w-none"
+  dangerouslySetInnerHTML={{ __html: product.description || 'Premium quality medical-themed merchandise.' }}
+/>
+
           {product.variants?.length > 0 && (
             <div>
               <p className="font-semibold mb-3">Size: <span className="text-primary">{selectedVariant?.title}</span></p>
