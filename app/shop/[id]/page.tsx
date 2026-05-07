@@ -81,9 +81,30 @@ export default function ProductDetailPage() {
     <div className="max-w-6xl mx-auto px-4 py-12">
       <Link href="/shop" className="text-primary text-sm hover:underline mb-6 inline-block">← Back to Shop</Link>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-        <div>
-          <img src={product.image} alt={product.title} className="w-full h-96 object-cover rounded-2xl" />
-        </div>
+<div className="space-y-3">
+  <img
+    src={product.image}
+    alt={product.title}
+    className="w-full h-96 object-cover rounded-2xl border border-slate-100"
+  />
+  {product.images?.length > 1 && (
+    <div className="flex gap-2 overflow-x-auto pb-1">
+      {product.images.slice(0, 6).map((img: string, i: number) => (
+        <img
+          key={i}
+          src={img}
+          alt={`view ${i + 1}`}
+          className="w-20 h-20 object-cover rounded-lg flex-shrink-0 border-2 border-transparent hover:border-primary cursor-pointer"
+          onClick={(e) => {
+            const main = e.currentTarget.parentElement?.previousElementSibling as HTMLImageElement
+            if (main) main.src = img
+          }}
+        />
+      ))}
+    </div>
+  )}
+</div>
+
         <div className="space-y-6">
           <div>
             <h1 className="text-3xl font-heading font-bold text-text-dark mb-2">{product.title}</h1>
