@@ -74,10 +74,12 @@ export default function ReviewSection({ productId }: { productId: string }) {
   const loadReviews = async (userId?: string) => {
     const supabase = getSupabase()
     const { data } = await supabase
-      .from('reviews')
-      .select('*')
-      .eq('product_id', productId)
-      .order('created_at', { ascending: false })
+  .from('reviews')
+  .select('*')
+  .eq('product_id', productId)
+  .order('upvotes', { ascending: false })
+  .order('created_at', { ascending: false })
+  .limit(10)
 
     if (data) {
       if (userId) {
