@@ -51,7 +51,6 @@ export default function ProductCard({ product }: { product: Product }) {
             {product.title}
           </h3>
         </Link>
-        <p className="text-text-slate text-sm mb-3 line-clamp-1">{product.description}</p>
         <div className="flex items-center justify-between">
           <span className="text-primary font-bold text-lg">${product.price}</span>
           <button
