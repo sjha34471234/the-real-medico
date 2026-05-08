@@ -1,5 +1,4 @@
 import Link from 'next/link'
-
 export default function Footer() {
   return (
     <footer className="bg-text-dark text-white pt-12 pb-6 px-4">
@@ -27,7 +26,6 @@ export default function Footer() {
             </a>
           </div>
         </div>
-
         <div>
           <h4 className="font-bold mb-4 text-white">Shop</h4>
           <ul className="space-y-2 text-slate-400 text-sm">
@@ -38,7 +36,6 @@ export default function Footer() {
             <li><Link href="/account" className="hover:text-white transition-colors">Real Medico+ ⭐</Link></li>
           </ul>
         </div>
-
         <div>
           <h4 className="font-bold mb-4 text-white">Help</h4>
           <ul className="space-y-2 text-slate-400 text-sm">
@@ -50,7 +47,6 @@ export default function Footer() {
           </ul>
         </div>
       </div>
-
       {/* Trust badges */}
       <div className="max-w-6xl mx-auto border-t border-slate-700 pt-6 mb-6">
         <div className="flex flex-wrap justify-center gap-6 text-slate-500 text-xs">
@@ -58,10 +54,9 @@ export default function Footer() {
           <span>💳 Razorpay Protected</span>
           <span>🖨️ Print on Demand</span>
           <span>↩️ 30-Day Returns</span>
-          <span>🇮🇳 Made for India</span>
+          <span>🇮🇳 Made in India, Made for World</span>
         </div>
       </div>
-
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-2 text-slate-500 text-xs">
         <p>© {new Date().getFullYear()} The Real Medico. All rights reserved.</p>
         <div className="flex gap-4">
