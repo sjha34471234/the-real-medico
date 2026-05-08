@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import toast from 'react-hot-toast'
 import { Plus, Trash2, Star } from 'lucide-react'
+import Link from 'next/link'
 
 interface Address {
   id: string
@@ -25,20 +26,29 @@ export default function AddressesPage() {
   const [saving, setSaving] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(empty)
+  const [user, setUser] = useState<any>(null)
+  const [authChecked, setAuthChecked] = useState(false)
 
-  const fetchAddresses = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      setUser(user)
+      setAuthChecked(true)
+      if (user) fetchAddresses(user.id)
+      else setLoading(false)
+    }
+    checkUser()
+  }, [])
+
+  const fetchAddresses = async (userId: string) => {
     const { data } = await supabase
       .from('addresses')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', userId)
       .order('is_default', { ascending: false })
     setAddresses(data || [])
     setLoading(false)
   }
-
-  useEffect(() => { fetchAddresses() }, [])
 
   const update = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -52,18 +62,13 @@ export default function AddressesPage() {
     if (!form.zip.trim()) { toast.error('Enter ZIP / PIN code'); return }
 
     setSaving(true)
-    const { data: { user } } = await supabase.auth.getUser()
     if (!user) { toast.error('Please log in first'); setSaving(false); return }
 
-    // If this is default, unset all others first
     if (form.is_default) {
       await supabase.from('addresses').update({ is_default: false }).eq('user_id', user.id)
     }
 
-    const { error } = await supabase.from('addresses').insert({
-      ...form,
-      user_id: user.id,
-    })
+    const { error } = await supabase.from('addresses').insert({ ...form, user_id: user.id })
 
     if (error) {
       toast.error('Failed to save address')
@@ -71,7 +76,7 @@ export default function AddressesPage() {
       toast.success('Address saved!')
       setForm(empty)
       setShowForm(false)
-      fetchAddresses()
+      fetchAddresses(user.id)
     }
     setSaving(false)
   }
@@ -80,22 +85,41 @@ export default function AddressesPage() {
     const { error } = await supabase.from('addresses').delete().eq('id', id)
     if (error) { toast.error('Failed to delete'); return }
     toast.success('Address removed')
-    fetchAddresses()
+    if (user) fetchAddresses(user.id)
   }
 
   const handleSetDefault = async (id: string) => {
-    const { data: { user } } = await supabase.auth.getUser()
     if (!user) return
     await supabase.from('addresses').update({ is_default: false }).eq('user_id', user.id)
     await supabase.from('addresses').update({ is_default: true }).eq('id', id)
     toast.success('Default address updated')
-    fetchAddresses()
+    fetchAddresses(user.id)
   }
+
+  // Still checking auth
+  if (!authChecked) return (
+    <div className="max-w-2xl mx-auto px-4 py-16 text-center text-text-slate">
+      Loading...
+    </div>
+  )
+
+  // Not logged in — show message with link to account
+  if (!user) return (
+    <div className="max-w-md mx-auto px-4 py-24 text-center">
+      <div className="text-5xl mb-6">🔒</div>
+      <h2 className="text-2xl font-heading font-bold text-primary mb-3">Please log in first</h2>
+      <p className="text-text-slate mb-6">You need to be logged in to manage your saved addresses.</p>
+      <Link href="/account" className="btn-primary inline-block">Go to Login →</Link>
+    </div>
+  )
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-12">
       <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-heading font-bold text-primary">Saved Addresses</h1>
+        <div>
+          <Link href="/account" className="text-sm text-text-slate hover:text-primary mb-1 inline-block">← Back to Account</Link>
+          <h1 className="text-3xl font-heading font-bold text-primary">Saved Addresses</h1>
+        </div>
         <button
           onClick={() => setShowForm(!showForm)}
           className="btn-primary flex items-center gap-2"
