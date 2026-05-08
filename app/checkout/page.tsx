@@ -19,7 +19,7 @@ export default function CheckoutPage() {
   const goToStep2 = () => {
     if (!form.name.trim()) { toast.error('Please enter your full name'); return }
     if (!form.email.trim() || !form.email.includes('@')) { toast.error('Please enter a valid email'); return }
-    if (!form.phone.trim() || form.phone.length < 10) { toast.error('Please enter a valid phone number'); return }
+    if (!form.phone.trim() || form.phone.length < 7) { toast.error('Please enter a valid phone number'); return }
     setStep(2)
   }
 
@@ -87,7 +87,7 @@ export default function CheckoutPage() {
         toast.error(`Payment failed: ${response.error.description}`)
       })
       rzp.open()
-    } catch (err) {
+    } catch {
       setLoading(false)
       toast.error('Something went wrong. Please try again.')
     }
@@ -115,7 +115,9 @@ export default function CheckoutPage() {
               </span>
               <span className="hidden sm:block">{s}</span>
             </div>
-            {i < 2 && <div className={`w-8 h-0.5 ${step > i + 1 ? 'bg-success' : 'bg-slate-200'}`} />}
+            {i < 2 && (
+              <div className={`w-8 h-0.5 ${step > i + 1 ? 'bg-success' : 'bg-slate-200'}`} />
+            )}
           </div>
         ))}
       </div>
@@ -126,18 +128,18 @@ export default function CheckoutPage() {
           {/* Step 1 — Contact */}
           {step === 1 && (
             <div className="card p-6 space-y-4">
-              <h2 className="text-xl font-bold mb-2">Contact Information</h2>
+              <h2 className="text-xl font-bold">Contact Information</h2>
               <div>
                 <label className="text-sm font-medium text-text-slate mb-1 block">Full Name *</label>
-                <input name="name" placeholder="Dr. John Smith" value={form.name} onChange={update} className={`input-field ${!form.name ? 'border-slate-200' : 'border-success'}`} />
+                <input name="name" placeholder="Dr. John Smith" value={form.name} onChange={update} className="input-field" />
               </div>
               <div>
                 <label className="text-sm font-medium text-text-slate mb-1 block">Email Address *</label>
-                <input name="email" type="email" placeholder="john@hospital.com" value={form.email} onChange={update} className={`input-field ${!form.email ? 'border-slate-200' : 'border-success'}`} />
+                <input name="email" type="email" placeholder="john@hospital.com" value={form.email} onChange={update} className="input-field" />
               </div>
               <div>
                 <label className="text-sm font-medium text-text-slate mb-1 block">Phone Number *</label>
-                <input name="phone" placeholder="+91 98765 43210" value={form.phone} onChange={update} className={`input-field ${!form.phone ? 'border-slate-200' : 'border-success'}`} />
+                <input name="phone" placeholder="+1 234 567 8900" value={form.phone} onChange={update} className="input-field" />
               </div>
               <button onClick={goToStep2} className="btn-primary w-full mt-2">
                 Continue to Shipping →
@@ -148,151 +150,26 @@ export default function CheckoutPage() {
           {/* Step 2 — Shipping */}
           {step === 2 && (
             <div className="card p-6 space-y-4">
-              <h2 className="text-xl font-bold mb-2">Shipping Address</h2>
+              <h2 className="text-xl font-bold">Shipping Address</h2>
               <div>
                 <label className="text-sm font-medium text-text-slate mb-1 block">Street Address *</label>
-                <input name="address" placeholder="123 Medical Colony" value={form.address} onChange={update} className={`input-field ${!form.address ? 'border-slate-200' : 'border-success'}`} />
+                <input name="address" placeholder="123 Medical Street" value={form.address} onChange={update} className="input-field" />
               </div>
               <div>
                 <label className="text-sm font-medium text-text-slate mb-1 block">City *</label>
-                <input name="city" placeholder="Mumbai" value={form.city} onChange={update} className={`input-field ${!form.city ? 'border-slate-200' : 'border-success'}`} />
+                <input name="city" placeholder="New York" value={form.city} onChange={update} className="input-field" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium text-text-slate mb-1 block">State</label>
-                  <input name="state" placeholder="Maharashtra" value={form.state} onChange={update} className="input-field" />
+                  <label className="text-sm font-medium text-text-slate mb-1 block">State / Province</label>
+                  <input name="state" placeholder="NY" value={form.state} onChange={update} className="input-field" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-text-slate mb-1 block">PIN Code *</label>
-                  <input name="zip" placeholder="400001" value={form.zip} onChange={update} className={`input-field ${!form.zip ? 'border-slate-200' : 'border-success'}`} />
+                  <label className="text-sm font-medium text-text-slate mb-1 block">ZIP / Postal Code *</label>
+                  <input name="zip" placeholder="10001" value={form.zip} onChange={update} className="input-field" />
                 </div>
               </div>
               <div>
                 <label className="text-sm font-medium text-text-slate mb-1 block">Country</label>
                 <select name="country" value={form.country} onChange={update} className="input-field">
                   <option>India</option>
-                  <option>United States</option>
-                  <option>United Kingdom</option>
-                  <option>Canada</option>
-                  <option>Australia</option>
-                </select>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button onClick={() => setStep(1)} className="btn-secondary flex-1">← Back</button>
-                <button onClick={goToStep3} className="btn-primary flex-1">Continue to Payment →</button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 3 — Payment */}
-{step === 3 && (
-  <div className="card p-6 space-y-4">
-    <h2 className="text-xl font-bold mb-2">Payment</h2>
-
-    {/* Delivery summary */}
-    <div className="bg-accent rounded-xl p-4 space-y-1 text-sm">
-      <p className="font-semibold text-text-dark">Delivering to:</p>
-      <p className="text-text-slate">{form.name} · {form.phone}</p>
-      <p className="text-text-slate">{form.address}, {form.city} {form.zip}</p>
-      <p className="text-text-slate">{form.email}</p>
-      <button onClick={() => setStep(1)} className="text-primary text-xs hover:underline mt-1">
-        Edit details
-      </button>
-    </div>
-
-    {/* Payment method selector */}
-    <div>
-      <p className="font-semibold mb-3">Select Payment Method</p>
-      <div className="space-y-3">
-        <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'razorpay' ? 'border-primary bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
-          <input
-            type="radio"
-            name="payment"
-            value="razorpay"
-            checked={paymentMethod === 'razorpay'}
-            onChange={() => setPaymentMethod('razorpay')}
-            className="accent-primary"
-          />
-          <div className="flex-1">
-            <p className="font-semibold text-sm">🔒 Online Payment</p>
-            <p className="text-text-slate text-xs mt-0.5">UPI · Cards · Net Banking · Wallets · EMI</p>
-          </div>
-          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Recommended</span>
-        </label>
-
-        <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'cod' ? 'border-primary bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
-          <input
-            type="radio"
-            name="payment"
-            value="cod"
-            checked={paymentMethod === 'cod'}
-            onChange={() => setPaymentMethod('cod')}
-            className="accent-primary"
-          />
-          <div className="flex-1">
-            <p className="font-semibold text-sm">💵 Cash on Delivery</p>
-            <p className="text-text-slate text-xs mt-0.5">Pay when your order arrives · ₹50 COD fee applies</p>
-          </div>
-        </label>
-      </div>
-    </div>
-
-    {paymentMethod === 'cod' && (
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-        <p className="font-semibold mb-1">⚠️ COD Information</p>
-        <p>A ₹50 Cash on Delivery fee will be added to your order. Please keep exact change ready at delivery.</p>
-      </div>
-    )}
-
-    <div className="flex gap-3">
-      <button onClick={() => setStep(2)} className="btn-secondary flex-1">← Back</button>
-      <button
-        onClick={paymentMethod === 'cod' ? handleCOD : handlePayment}
-        disabled={loading}
-        className="btn-primary flex-1 flex items-center justify-center gap-2"
-      >
-        {loading
-          ? '⏳ Processing...'
-          : paymentMethod === 'cod'
-          ? `Place Order (COD)`
-          : `Pay ₹${(total() * 83).toFixed(0)} Securely`
-        }
-      </button>
-    </div>
-  </div>
-)}
-
-        {/* Order Summary */}
-        <div className="card p-5 h-fit sticky top-24">
-          <h3 className="font-bold mb-4 text-lg">Order Summary</h3>
-          <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
-            {items.map((item) => (
-              <div key={item.id} className="flex gap-3 items-center">
-                <img src={item.image} className="w-12 h-12 rounded-lg object-cover flex-shrink-0" alt={item.title} />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm line-clamp-1">{item.title}</p>
-                  <p className="text-text-slate text-xs">Size: {item.size} · Qty: {item.quantity}</p>
-                </div>
-                <span className="font-bold text-sm text-primary">${(item.price * item.quantity).toFixed(2)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="border-t pt-3 space-y-2">
-            <div className="flex justify-between text-sm text-text-slate">
-              <span>Subtotal (USD)</span>
-              <span>${total().toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-sm text-text-slate">
-              <span>Amount (INR ~)</span>
-              <span>₹{(total() * 83).toFixed(0)}</span>
-            </div>
-            <div className="flex justify-between font-bold text-primary text-lg pt-1 border-t">
-              <span>Total</span>
-              <span>₹{(total() * 83).toFixed(0)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
