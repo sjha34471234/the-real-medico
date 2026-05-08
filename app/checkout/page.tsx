@@ -93,13 +93,15 @@ export default function CheckoutPage() {
     }
   }
 
-  if (items.length === 0) return (
-    <div className="max-w-xl mx-auto px-4 py-24 text-center">
-      <div className="text-6xl mb-6">🛒</div>
-      <h2 className="text-3xl font-heading font-bold text-primary mb-4">Your cart is empty</h2>
-      <Link href="/shop" className="btn-primary inline-block">Browse Products</Link>
-    </div>
-  )
+  if (items.length === 0) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-24 text-center">
+        <div className="text-6xl mb-6">🛒</div>
+        <h2 className="text-3xl font-heading font-bold text-primary mb-4">Your cart is empty</h2>
+        <Link href="/shop" className="btn-primary inline-block">Browse Products</Link>
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12">
