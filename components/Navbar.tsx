@@ -3,26 +3,25 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { ShoppingCart, Menu, X, User } from 'lucide-react'
 import useCartStore from '@/store/cartStore'
-
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const cartCount = useCartStore((s) => s.items.reduce((a, i) => a + i.quantity, 0))
-
   return (
     <nav className="sticky top-0 z-50 bg-white border-b border-slate-100 shadow-sm">
       <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2">
           <span className="text-2xl font-heading font-black text-primary">
             The Real Medico
           </span>
         </Link>
-
         {/* Desktop Nav */}
         <div className="hidden md:flex items-center gap-8">
           <Link href="/shop" className="text-text-dark hover:text-primary font-medium transition-colors">
             Shop
+          </Link>
+          <Link href="/trending" className="text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1">
+            🔥 Trending
           </Link>
           <Link href="/about" className="text-text-dark hover:text-primary font-medium transition-colors">
             About
@@ -34,7 +33,6 @@ export default function Navbar() {
             FAQ
           </Link>
         </div>
-
         {/* Right side */}
         <div className="flex items-center gap-3">
           {/* Cart */}
@@ -46,13 +44,11 @@ export default function Navbar() {
               </span>
             )}
           </Link>
-
           {/* Account */}
           <Link href="/account" className="hidden md:flex items-center gap-2 btn-primary text-sm py-2 px-4">
             <User className="w-4 h-4" />
             Account
           </Link>
-
           {/* Mobile menu button */}
           <button
             className="md:hidden p-2 hover:bg-accent rounded-lg transition-colors"
@@ -63,12 +59,12 @@ export default function Navbar() {
           </button>
         </div>
       </div>
-
       {/* Mobile Menu */}
       {menuOpen && (
         <div className="md:hidden bg-white border-t border-slate-100 px-4 py-4 flex flex-col gap-1">
           {[
             { href: '/shop', label: '🛍️ Shop' },
+            { href: '/trending', label: '🔥 Trending' },
             { href: '/about', label: '👥 About' },
             { href: '/contact', label: '📧 Contact' },
             { href: '/faq', label: '❓ FAQ' },
