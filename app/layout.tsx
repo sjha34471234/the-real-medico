@@ -24,6 +24,27 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <script
+  type="application/ld+json"
+  dangerouslySetInnerHTML={{
+    __html: JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "The Real Medico",
+      "url": "https://therealmedico.store",
+      "logo": "https://therealmedico.store/logo.png",
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "email": "support@therealmedico.store",
+        "contactType": "customer service"
+      },
+      "sameAs": [
+        "https://instagram.com/therealmedico"
+      ]
+    })
+  }}
+/>
+
+        <script
           src="https://checkout.razorpay.com/v1/checkout.js"
           async
         />
