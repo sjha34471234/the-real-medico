@@ -7,8 +7,8 @@ const faqs = [
   {
     category: 'Orders & Shipping',
     items: [
-      { q: 'How long does shipping take?', a: 'Orders are printed in 3-5 business days and delivered in 5-10 business days within India. International shipping takes 10-20 business days.' },
-      { q: 'Do you ship internationally?', a: 'Currently we ship within India. International shipping is coming soon.' },
+      { q: 'How long does shipping take?', a: 'Orders are printed in 3-5 business days. Delivery within India takes 5-10 business days. International shipping takes 10-20 business days depending on your country.' },
+      { q: 'Do you ship internationally?', a: 'Yes! We ship worldwide. If your country is not listed at checkout, international shipping is coming to your region soon — contact us and we will try to help.' },
       { q: 'Can I track my order?', a: 'Yes! You will receive a tracking number via email once your order ships.' },
       { q: 'What shipping carriers do you use?', a: 'We use trusted carriers including Delhivery, BlueDart, and FedEx depending on your location.' },
     ]
@@ -25,7 +25,7 @@ const faqs = [
   {
     category: 'Returns & Refunds',
     items: [
-      { q: 'What is your return policy?', a: 'We accept returns within 30 days for defective or damaged items. Since all items are printed on demand, we cannot accept returns for size or color preference changes.' },
+      { q: 'What is your return policy?', a: 'We are currently not offering returns or exchanges. However, a full return and exchange policy is coming very soon! If your item arrived damaged or defective, we will always make it right — contact us with photos.' },
       { q: 'My item arrived damaged. What do I do?', a: 'Email us at support@therealmedico.store with photos of the damage within 7 days of delivery. We will send a replacement at no cost.' },
       { q: 'Can I cancel my order?', a: 'Orders can be cancelled within 24 hours of placement. After that, production has begun and cancellation is not possible.' },
       { q: 'How long do refunds take?', a: 'Approved refunds are processed within 5-7 business days to your original payment method.' },
@@ -34,7 +34,7 @@ const faqs = [
   {
     category: 'Payments',
     items: [
-      { q: 'What payment methods do you accept?', a: 'We accept UPI, credit/debit cards, net banking, and all major digital wallets via Razorpay.' },
+      { q: 'What payment methods do you accept?', a: 'We accept UPI, credit/debit cards, net banking, and all major digital wallets via Razorpay. International cards are also accepted.' },
       { q: 'Is my payment information secure?', a: 'Yes. All payments are processed by Razorpay, a PCI-DSS compliant payment gateway. We never store your card details.' },
       { q: 'Do you offer Cash on Delivery (COD)?', a: 'COD is not currently available. We are working on adding this option soon.' },
     ]
@@ -43,7 +43,7 @@ const faqs = [
     category: 'Real Medico+ Membership',
     items: [
       { q: 'What is Real Medico+?', a: 'Real Medico+ is our premium membership for ₹415/month (~$5). Members get early access to new products, 15% discount on all orders, free shipping, and exclusive community access.' },
-      { q: 'How do I join Real Medico+?', a: 'Go to your Account page and tap the "Real Medico+" tab. You can subscribe with any payment method.' },
+      { q: 'How do I join Real Medico+?', a: 'Go to your Account page and tap the "Real Medico+" tab. Membership is invite-only and exclusively for verified healthcare professionals and students.' },
       { q: 'Can I cancel my membership?', a: 'Yes, you can cancel anytime from your Account page. Your benefits continue until the end of the billing period.' },
     ]
   },
