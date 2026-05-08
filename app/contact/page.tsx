@@ -22,11 +22,11 @@ export default function ContactPage() {
   }
 
   const faqs = [
-    { q: 'How long does shipping take?', a: 'Orders are printed and shipped within 3-5 business days. Delivery takes 5-10 days within India.' },
-    { q: 'What is your return policy?', a: 'We offer a 30-day return policy for defective or damaged items. Contact us with photos of the issue.' },
+    { q: 'How long does shipping take?', a: 'Orders are printed and shipped within 3-5 business days. Delivery takes 5-10 days within India and 10-20 days internationally.' },
+    { q: 'Do you ship internationally?', a: 'Yes! We ship worldwide. If your country is not listed at checkout, shipping is coming to your region soon — reach out and we will try to help.' },
+    { q: 'What is your return policy?', a: 'We are currently not offering returns or exchanges, but a full return policy is coming very soon! If your item arrived damaged or defective, contact us with photos and we will make it right.' },
     { q: 'Can I track my order?', a: 'Yes! You will receive a tracking number via email once your order ships.' },
     { q: 'What sizes do you offer?', a: 'We offer XS through 3XL for most apparel items. Check individual product pages for size charts.' },
-    { q: 'Do you ship internationally?', a: 'Currently we ship within India. International shipping is coming soon.' },
   ]
 
   return (
@@ -53,6 +53,7 @@ export default function ContactPage() {
           <div className="pt-4 space-y-2 text-sm text-text-slate">
             <p>📧 support@therealmedico.store</p>
             <p>⏰ Response within 24 hours</p>
+            <p>🌍 Serving customers worldwide</p>
           </div>
         </div>
 
