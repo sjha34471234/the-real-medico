@@ -185,36 +185,82 @@ export default function CheckoutPage() {
           )}
 
           {/* Step 3 — Payment */}
-          {step === 3 && (
-            <div className="card p-6 space-y-4">
-              <h2 className="text-xl font-bold mb-2">Payment</h2>
-              <div className="bg-accent rounded-xl p-4 space-y-1 text-sm">
-                <p className="font-semibold text-text-dark">Delivering to:</p>
-                <p className="text-text-slate">{form.name} · {form.phone}</p>
-                <p className="text-text-slate">{form.address}, {form.city} {form.zip}</p>
-                <p className="text-text-slate">{form.email}</p>
-                <button onClick={() => setStep(1)} className="text-primary text-xs hover:underline mt-1">Edit details</button>
-              </div>
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-center gap-3">
-                <span className="text-3xl">🔒</span>
-                <div>
-                  <p className="font-semibold text-sm">Secure Payment via Razorpay</p>
-                  <p className="text-text-slate text-xs mt-0.5">UPI · Cards · Net Banking · Wallets · EMI</p>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button onClick={() => setStep(2)} className="btn-secondary flex-1">← Back</button>
-                <button
-                  onClick={handlePayment}
-                  disabled={loading}
-                  className="btn-primary flex-1 flex items-center justify-center gap-2"
-                >
-                  {loading ? '⏳ Opening...' : `Pay ₹${(total() * 83).toFixed(0)} Securely`}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+{step === 3 && (
+  <div className="card p-6 space-y-4">
+    <h2 className="text-xl font-bold mb-2">Payment</h2>
+
+    {/* Delivery summary */}
+    <div className="bg-accent rounded-xl p-4 space-y-1 text-sm">
+      <p className="font-semibold text-text-dark">Delivering to:</p>
+      <p className="text-text-slate">{form.name} · {form.phone}</p>
+      <p className="text-text-slate">{form.address}, {form.city} {form.zip}</p>
+      <p className="text-text-slate">{form.email}</p>
+      <button onClick={() => setStep(1)} className="text-primary text-xs hover:underline mt-1">
+        Edit details
+      </button>
+    </div>
+
+    {/* Payment method selector */}
+    <div>
+      <p className="font-semibold mb-3">Select Payment Method</p>
+      <div className="space-y-3">
+        <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'razorpay' ? 'border-primary bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
+          <input
+            type="radio"
+            name="payment"
+            value="razorpay"
+            checked={paymentMethod === 'razorpay'}
+            onChange={() => setPaymentMethod('razorpay')}
+            className="accent-primary"
+          />
+          <div className="flex-1">
+            <p className="font-semibold text-sm">🔒 Online Payment</p>
+            <p className="text-text-slate text-xs mt-0.5">UPI · Cards · Net Banking · Wallets · EMI</p>
+          </div>
+          <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Recommended</span>
+        </label>
+
+        <label className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${paymentMethod === 'cod' ? 'border-primary bg-blue-50' : 'border-slate-200 hover:border-slate-300'}`}>
+          <input
+            type="radio"
+            name="payment"
+            value="cod"
+            checked={paymentMethod === 'cod'}
+            onChange={() => setPaymentMethod('cod')}
+            className="accent-primary"
+          />
+          <div className="flex-1">
+            <p className="font-semibold text-sm">💵 Cash on Delivery</p>
+            <p className="text-text-slate text-xs mt-0.5">Pay when your order arrives · ₹50 COD fee applies</p>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    {paymentMethod === 'cod' && (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+        <p className="font-semibold mb-1">⚠️ COD Information</p>
+        <p>A ₹50 Cash on Delivery fee will be added to your order. Please keep exact change ready at delivery.</p>
+      </div>
+    )}
+
+    <div className="flex gap-3">
+      <button onClick={() => setStep(2)} className="btn-secondary flex-1">← Back</button>
+      <button
+        onClick={paymentMethod === 'cod' ? handleCOD : handlePayment}
+        disabled={loading}
+        className="btn-primary flex-1 flex items-center justify-center gap-2"
+      >
+        {loading
+          ? '⏳ Processing...'
+          : paymentMethod === 'cod'
+          ? `Place Order (COD)`
+          : `Pay ₹${(total() * 83).toFixed(0)} Securely`
+        }
+      </button>
+    </div>
+  </div>
+)}
 
         {/* Order Summary */}
         <div className="card p-5 h-fit sticky top-24">
