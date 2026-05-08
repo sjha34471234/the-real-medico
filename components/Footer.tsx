@@ -12,7 +12,7 @@ export default function Footer() {
           </p>
           {/* Social Links */}
           <div className="flex gap-3">
-            <a href="https://instagram.com/therealmedico" target="_blank" rel="noopener noreferrer"
+            <a href="https://instagram.com/therealmedico_" target="_blank" rel="noopener noreferrer"
               className="w-9 h-9 bg-slate-700 hover:bg-primary rounded-lg flex items-center justify-center transition-colors text-sm">
               📸
             </a>
