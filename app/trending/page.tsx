@@ -1,4 +1,4 @@
-import { Suspense } from 'next'
+import { Suspense } from 'react'
 import ProductCard from '@/components/ProductCard'
 import { createClient } from '@supabase/supabase-js'
 
