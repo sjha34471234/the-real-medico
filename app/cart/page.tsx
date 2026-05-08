@@ -21,37 +21,58 @@ export default function CartPage() {
     <div className="max-w-6xl mx-auto px-4 py-12">
       <h1 className="text-4xl font-heading font-bold text-primary mb-8">Your Cart</h1>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
         {/* Items */}
         <div className="lg:col-span-2 space-y-4">
           {items.map((item) => (
-            <div key={item.id} className="card p-4 flex gap-4 items-center">
-              <img src={item.image} alt={item.title} className="w-20 h-20 rounded-lg object-cover" />
-              <div className="flex-1">
-                <h3 className="font-bold text-text-dark">{item.title}</h3>
-                <p className="text-text-slate text-sm">Size: {item.size}</p>
-                <p className="text-primary font-bold">${item.price}</p>
+            <div key={item.id} className="card p-4">
+              <div className="flex gap-4">
+                {/* Image */}
+                <img
+                  src={item.image}
+                  alt={item.title}
+                  className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
+                />
+
+                {/* Title + price + controls */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-text-dark leading-tight line-clamp-2">{item.title}</h3>
+                      <p className="text-text-slate text-sm mt-0.5">Size: {item.size}</p>
+                      <p className="text-primary font-bold mt-1">₹{(item.price * 83).toFixed(0)}</p>
+                    </div>
+                    {/* Trash button — always visible top right */}
+                    <button
+                      onClick={() => removeItem(item.id)}
+                      className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex-shrink-0 transition-colors"
+                      aria-label="Remove item"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {/* Quantity controls — below title on all screen sizes */}
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={() => updateQty(item.id, Math.max(1, item.quantity - 1))}
+                      className="p-1.5 rounded-lg bg-accent hover:bg-slate-200 transition-colors"
+                    >
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <span className="font-bold w-8 text-center">{item.quantity}</span>
+                    <button
+                      onClick={() => updateQty(item.id, item.quantity + 1)}
+                      className="p-1.5 rounded-lg bg-accent hover:bg-slate-200 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <span className="text-text-slate text-sm ml-2">
+                      = ₹{(item.price * item.quantity * 83).toFixed(0)}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => updateQty(item.id, Math.max(1, item.quantity - 1))}
-                  className="p-1 rounded-lg bg-accent hover:bg-slate-200"
-                >
-                  <Minus className="w-4 h-4" />
-                </button>
-                <span className="font-bold w-6 text-center">{item.quantity}</span>
-                <button
-                  onClick={() => updateQty(item.id, item.quantity + 1)}
-                  className="p-1 rounded-lg bg-accent hover:bg-slate-200"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-              <button
-                onClick={() => removeItem(item.id)}
-                className="p-2 text-error hover:bg-red-50 rounded-lg"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
             </div>
           ))}
         </div>
@@ -61,8 +82,8 @@ export default function CartPage() {
           <h2 className="text-xl font-bold mb-6">Order Summary</h2>
           <div className="space-y-3 mb-6">
             <div className="flex justify-between text-text-slate">
-              <span>Subtotal</span>
-              <span>${total().toFixed(2)}</span>
+              <span>Subtotal ({items.reduce((a, i) => a + i.quantity, 0)} items)</span>
+              <span>₹{(total() * 83).toFixed(0)}</span>
             </div>
             <div className="flex justify-between text-text-slate">
               <span>Shipping</span>
@@ -70,7 +91,7 @@ export default function CartPage() {
             </div>
             <div className="border-t pt-3 flex justify-between font-bold text-lg">
               <span>Total</span>
-              <span className="text-primary">${total().toFixed(2)}</span>
+              <span className="text-primary">₹{(total() * 83).toFixed(0)}</span>
             </div>
           </div>
           <Link href="/checkout" className="btn-primary w-full text-center block">
