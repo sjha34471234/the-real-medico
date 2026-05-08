@@ -1,6 +1,10 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 import toast from 'react-hot-toast'
 import { Plus, Trash2, Star } from 'lucide-react'
 import Link from 'next/link'
