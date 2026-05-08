@@ -9,13 +9,13 @@ export async function POST(req: Request) {
     })
 
     const { amount } = await req.json()
-    
-    // Amount comes in INR, convert to paise (multiply by 100)
+
+    // Convert USD to INR (approximate) then to paise
     const amountInPaise = Math.round(Number(amount) * 100)
 
     if (amountInPaise < 100) {
       return NextResponse.json(
-        { error: 'Minimum amount is ₹1' },
+        { error: 'Minimum amount is $1' },
         { status: 400 }
       )
     }
