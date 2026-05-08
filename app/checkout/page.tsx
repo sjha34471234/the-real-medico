@@ -173,3 +173,106 @@ export default function CheckoutPage() {
                 <label className="text-sm font-medium text-text-slate mb-1 block">Country</label>
                 <select name="country" value={form.country} onChange={update} className="input-field">
                   <option>India</option>
+                  <option>United States</option>
+                  <option>United Kingdom</option>
+                  <option>Canada</option>
+                  <option>Australia</option>
+                  <option>Germany</option>
+                  <option>France</option>
+                  <option>UAE</option>
+                  <option>Singapore</option>
+                  <option>New Zealand</option>
+                  <option>South Africa</option>
+                  <option>Malaysia</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setStep(1)} className="btn-secondary flex-1">← Back</button>
+                <button onClick={goToStep3} className="btn-primary flex-1">Continue to Payment →</button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 3 — Payment */}
+          {step === 3 && (
+            <div className="card p-6 space-y-4">
+              <h2 className="text-xl font-bold">Payment</h2>
+              <div className="bg-accent rounded-xl p-4 space-y-1 text-sm">
+                <p className="font-semibold text-text-dark">Delivering to:</p>
+                <p className="text-text-slate">{form.name} · {form.phone}</p>
+                <p className="text-text-slate">{form.address}, {form.city} {form.zip}, {form.country}</p>
+                <p className="text-text-slate">{form.email}</p>
+                <button onClick={() => setStep(1)} className="text-primary text-xs hover:underline mt-1">
+                  Edit details
+                </button>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-center gap-3">
+                <span className="text-3xl">🔒</span>
+                <div>
+                  <p className="font-semibold text-sm">Secure Payment via Razorpay</p>
+                  <p className="text-text-slate text-xs mt-0.5">
+                    UPI · Cards · Net Banking · Wallets · EMI · International Cards
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setStep(2)} className="btn-secondary flex-1">← Back</button>
+                <button
+                  onClick={handlePayment}
+                  disabled={loading}
+                  className="btn-primary flex-1 flex items-center justify-center gap-2"
+                >
+                  {loading
+                    ? '⏳ Opening...'
+                    : `Pay $${total().toFixed(2)} Securely`
+                  }
+                </button>
+              </div>
+              <p className="text-center text-xs text-text-slate">
+                🌍 International cards accepted · Prices in USD
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Order Summary */}
+        <div className="card p-5 h-fit sticky top-24">
+          <h3 className="font-bold mb-4 text-lg">Order Summary</h3>
+          <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
+            {items.map((item) => (
+              <div key={item.id} className="flex gap-3 items-center">
+                <img
+                  src={item.image}
+                  className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
+                  alt={item.title}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm line-clamp-1">{item.title}</p>
+                  <p className="text-text-slate text-xs">Size: {item.size} · Qty: {item.quantity}</p>
+                </div>
+                <span className="font-bold text-sm text-primary">
+                  ${(item.price * item.quantity).toFixed(2)}
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="border-t pt-3 space-y-2">
+            <div className="flex justify-between text-sm text-text-slate">
+              <span>Subtotal</span>
+              <span>${total().toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-sm text-text-slate">
+              <span>Shipping</span>
+              <span className="text-success font-medium">Calculated at payment</span>
+            </div>
+            <div className="flex justify-between font-bold text-primary text-lg pt-1 border-t">
+              <span>Total</span>
+              <span>${total().toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
