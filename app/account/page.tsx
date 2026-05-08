@@ -18,6 +18,9 @@ const TABS = [
   { id: 'membership', label: '👨‍⚕️ Real Medico+' },
 ]
 
+// ⚠️ Replace this with your real Patreon page URL when it's ready
+const PATREON_URL = 'https://www.patreon.com/therealmedico'
+
 export default function AccountPage() {
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [form, setForm] = useState({ email: '', password: '', name: '' })
@@ -31,8 +34,18 @@ export default function AccountPage() {
     setMounted(true)
     try {
       const supabase = getSupabase()
-      supabase.auth.getSession().then(({ data }) => {
-        if (data.session?.user) setUser(data.session.user)
+      supabase.auth.getSession().then(async ({ data }) => {
+        if (data.session?.user) {
+          setUser(data.session.user)
+          // Check if user has active membership
+          const { data: membership } = await supabase
+            .from('memberships')
+            .select('*')
+            .eq('user_id', data.session.user.id)
+            .eq('active', true)
+            .single()
+          if (membership) setIsMember(true)
+        }
       })
     } catch (e) {
       console.error('Supabase init error:', e)
@@ -156,8 +169,6 @@ export default function AccountPage() {
         ))}
       </div>
 
-      {/* Tab Content */}
-
       {/* PROFILE */}
       {activeTab === 'overview' && (
         <div className="card p-6 space-y-4">
@@ -191,18 +202,15 @@ export default function AccountPage() {
             <div className="text-5xl mb-4">📦</div>
             <p className="text-text-slate font-medium mb-2">No orders yet</p>
             <p className="text-text-slate text-sm mb-6">Your orders will appear here after purchase</p>
-            <Link href="/shop" className="btn-primary inline-block">
-              Start Shopping
-            </Link>
+            <Link href="/shop" className="btn-primary inline-block">Start Shopping</Link>
           </div>
         </div>
       )}
 
-     {/* WISHLIST */}
-{activeTab === 'wishlist' && (
-  <WishlistTab userId={user.id} />
-)}
-
+      {/* WISHLIST */}
+      {activeTab === 'wishlist' && (
+        <WishlistTab userId={user.id} />
+      )}
 
       {/* REVIEWS */}
       {activeTab === 'reviews' && (
@@ -212,9 +220,7 @@ export default function AccountPage() {
             <div className="text-5xl mb-4">⭐</div>
             <p className="text-text-slate font-medium mb-2">No reviews yet</p>
             <p className="text-text-slate text-sm mb-6">Reviews will appear here after you purchase and review products</p>
-            <Link href="/shop" className="btn-primary inline-block">
-              Shop & Review
-            </Link>
+            <Link href="/shop" className="btn-primary inline-block">Shop & Review</Link>
           </div>
         </div>
       )}
@@ -224,17 +230,17 @@ export default function AccountPage() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold">Saved Addresses</h2>
-            <button
-              onClick={() => toast.success('Address saving coming soon!')}
-              className="btn-primary text-sm py-2 px-4"
-            >
-              + Add Address
-            </button>
+            <Link href="/account/addresses" className="btn-primary text-sm py-2 px-4">
+              + Manage Addresses
+            </Link>
           </div>
-          <div className="card p-12 text-center">
+          <div className="card p-8 text-center">
             <div className="text-5xl mb-4">📍</div>
-            <p className="text-text-slate font-medium mb-2">No saved addresses</p>
-            <p className="text-text-slate text-sm">Save your address for faster checkout</p>
+            <p className="text-text-slate font-medium mb-2">Manage your saved addresses</p>
+            <p className="text-text-slate text-sm mb-4">Add, edit or set a default address for faster checkout</p>
+            <Link href="/account/addresses" className="btn-primary inline-block">
+              Go to Addresses
+            </Link>
           </div>
         </div>
       )}
@@ -245,24 +251,39 @@ export default function AccountPage() {
           <h2 className="text-xl font-bold">Real Medico+ Membership</h2>
 
           {isMember ? (
-            <div className="card p-6 border-2 border-primary">
-              <div className="flex items-center gap-3 mb-4">
-                <span className="text-3xl">⭐</span>
-                <div>
-                  <h3 className="font-bold text-primary text-lg">You're a Real Medico+ Member!</h3>
-                  <p className="text-text-slate text-sm">Active subscription — $5/month</p>
+            // ✅ MEMBER VIEW — show Patreon access button
+            <div className="space-y-4">
+              <div className="card p-6 border-2 border-primary">
+                <div className="flex items-center gap-3 mb-4">
+                  <span className="text-3xl">⭐</span>
+                  <div>
+                    <h3 className="font-bold text-primary text-lg">You're a Real Medico+ Member!</h3>
+                    <p className="text-text-slate text-sm">Your exclusive community access is active</p>
+                  </div>
                 </div>
+                <a
+                  href={PATREON_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-primary w-full text-center block"
+                >
+                  🎨 Open Real Medico+ on Patreon →
+                </a>
               </div>
-              <button
-                onClick={() => { setIsMember(false); toast.success('Subscription cancelled') }}
-                className="btn-secondary text-sm"
-              >
-                Cancel Subscription
-              </button>
+
+              <div className="card p-5 bg-accent">
+                <p className="text-sm text-text-slate text-center">
+                  To manage or cancel your membership, visit your{' '}
+                  <a href={PATREON_URL} target="_blank" rel="noopener noreferrer" className="text-primary font-semibold hover:underline">
+                    Patreon settings
+                  </a>
+                  .
+                </p>
+              </div>
             </div>
           ) : (
+            // 🔒 NON-MEMBER VIEW — benefits + how to join via Patreon
             <>
-              {/* Membership Card */}
               <div className="bg-gradient-to-br from-primary to-primary-dark text-white rounded-2xl p-8">
                 <div className="flex items-center gap-3 mb-6">
                   <span className="text-4xl">👨‍⚕️</span>
@@ -271,101 +292,70 @@ export default function AccountPage() {
                     <p className="text-blue-200">Premium membership for healthcare professionals</p>
                   </div>
                 </div>
-                <div className="text-4xl font-black mb-1">$5<span className="text-xl font-normal text-blue-200">/month</span></div>
-                <p className="text-blue-200 text-sm mb-6">Cancel anytime</p>
+                <div className="text-4xl font-black mb-1">
+                  ₹415<span className="text-xl font-normal text-blue-200">/month</span>
+                </div>
+                <p className="text-blue-200 text-sm mb-2">~$5 · Cancel anytime on Patreon</p>
+
                 <button
-                 onClick={async () => {
-  try {
-    const res = await fetch('/api/razorpay/subscription', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: user.email,
-        name: user.user_metadata?.name || '',
-      }),
-    })
-    const orderData = await res.json()
-    if (!orderData.order_id) throw new Error('Failed to create order')
-
-    const options = {
-      key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-      amount: orderData.amount,
-      currency: orderData.currency,
-      name: 'The Real Medico',
-      description: 'Real Medico+ Monthly Membership',
-      order_id: orderData.order_id,
-      prefill: {
-        email: user.email,
-        name: user.user_metadata?.name || '',
-      },
-      theme: { color: '#1A3A8F' },
-      handler: async (response: any) => {
-        const verifyRes = await fetch('/api/razorpay/verify-subscription', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...response,
-            user_email: user.email,
-          }),
-        })
-        const verifyData = await verifyRes.json()
-        if (verifyData.verified) {
-          setIsMember(true)
-          toast.success('Welcome to Real Medico+! 🎉')
-        } else {
-          toast.error('Payment verification failed')
-        }
-      },
-      modal: {
-        ondismiss: () => toast('Payment cancelled', { icon: 'ℹ️' }),
-      },
-    }
-    const rzp = new (window as any).Razorpay(options)
-    rzp.open()
-  } catch (err) {
-    toast.error('Something went wrong. Please try again.')
-  }
-}}
-
-                  className="bg-white text-primary font-bold px-8 py-3 rounded-xl hover:bg-accent transition-all w-full text-center"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch('/api/razorpay/subscription', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: user.email, name: user.user_metadata?.name || '' }),
+                      })
+                      const orderData = await res.json()
+                      if (!orderData.order_id) throw new Error('Failed to create order')
+                      const options = {
+                        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+                        amount: orderData.amount,
+                        currency: orderData.currency,
+                        name: 'The Real Medico',
+                        description: 'Real Medico+ Monthly Membership',
+                        order_id: orderData.order_id,
+                        prefill: { email: user.email, name: user.user_metadata?.name || '' },
+                        theme: { color: '#1A3A8F' },
+                        handler: async (response: any) => {
+                          const verifyRes = await fetch('/api/razorpay/verify-subscription', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ...response, user_email: user.email }),
+                          })
+                          const verifyData = await verifyRes.json()
+                          if (verifyData.verified) {
+                            setIsMember(true)
+                            toast.success('Welcome to Real Medico+! 🎉')
+                          } else {
+                            toast.error('Payment verification failed')
+                          }
+                        },
+                        modal: { ondismiss: () => toast('Payment cancelled', { icon: 'ℹ️' }) },
+                      }
+                      const rzp = new (window as any).Razorpay(options)
+                      rzp.open()
+                    } catch {
+                      toast.error('Something went wrong. Please try again.')
+                    }
+                  }}
+                  className="bg-white text-primary font-bold px-8 py-3 rounded-xl hover:bg-accent transition-all w-full text-center block"
                 >
                   Join Real Medico+ →
                 </button>
+                <p className="text-blue-200 text-xs text-center mt-3">
+                  🔒 Exclusive membership — not open to general public
+                </p>
               </div>
 
               {/* Benefits */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
-                  {
-                    icon: '🛍️',
-                    title: 'Early Access',
-                    desc: 'Get access to new products before they launch to the general public. Place orders up to 7 days early.'
-                  },
-                  {
-                    icon: '💰',
-                    title: 'Member Discounts',
-                    desc: 'Exclusive 15% discount on all products, every order, every time.'
-                  },
-                  {
-                    icon: '📦',
-                    title: 'Free Shipping',
-                    desc: 'Free shipping on all orders, no minimum order value required.'
-                  },
-                  {
-                    icon: '🔔',
-                    title: 'Coming Soon Alerts',
-                    desc: 'Be the first to know about upcoming product drops and limited editions.'
-                  },
-                  {
-                    icon: '⚡',
-                    title: 'Priority Support',
-                    desc: 'Skip the queue — get priority customer support with same-day responses.'
-                  },
-                  {
-                    icon: '🏥',
-                    title: 'Community Access',
-                    desc: 'Join our exclusive community of healthcare professionals and get insider content.'
-                  },
+                  { icon: '🛍️', title: 'Early Access', desc: 'Get access to new products before they launch to the general public. Place orders up to 7 days early.' },
+                  { icon: '💰', title: 'Member Discounts', desc: 'Exclusive 15% discount on all products, every order, every time.' },
+                  { icon: '📦', title: 'Free Shipping', desc: 'Free shipping on all orders, no minimum order value required.' },
+                  { icon: '🔔', title: 'Coming Soon Alerts', desc: 'Be the first to know about upcoming product drops and limited editions.' },
+                  { icon: '⚡', title: 'Priority Support', desc: 'Skip the queue — get priority customer support with same-day responses.' },
+                  { icon: '🏥', title: 'Community Access', desc: 'Join our exclusive members-only community of healthcare professionals and get insider content.' },
                 ].map((benefit) => (
                   <div key={benefit.title} className="card p-5 flex gap-4">
                     <span className="text-3xl flex-shrink-0">{benefit.icon}</span>
@@ -378,25 +368,23 @@ export default function AccountPage() {
               </div>
 
               <div className="card p-6 bg-accent">
-                <h3 className="font-bold mb-3">Coming Soon Products — Members Only Preview</h3>
+                <h3 className="font-bold mb-3">Members Only — Coming Soon Preview</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {[
-                    { name: 'Surgeon Scrub Cap', price: '$24.99', date: 'June 2026' },
-                    { name: 'Medical Lab Coat', price: '$89.99', date: 'July 2026' },
-                    { name: 'Doctor Tote Bag', price: '$34.99', date: 'July 2026' },
+                    { name: 'Surgeon Scrub Cap', price: '₹2,074', date: 'June 2026' },
+                    { name: 'Medical Lab Coat', price: '₹7,469', date: 'July 2026' },
+                    { name: 'Doctor Tote Bag', price: '₹2,904', date: 'July 2026' },
                   ].map((product) => (
                     <div key={product.name} className="bg-white rounded-xl p-4 text-center">
-                      <div className="w-full h-24 bg-slate-100 rounded-lg mb-3 flex items-center justify-center text-3xl">
-                        🔒
-                      </div>
+                      <div className="w-full h-24 bg-slate-100 rounded-lg mb-3 flex items-center justify-center text-3xl">🔒</div>
                       <p className="font-semibold text-sm">{product.name}</p>
                       <p className="text-primary font-bold">{product.price}</p>
                       <p className="text-text-slate text-xs">Available {product.date}</p>
                       <button
-                        onClick={() => toast.error('Join Real Medico+ to pre-order!')}
+                        onClick={() => toast.error('Join Real Medico+ on Patreon to pre-order!')}
                         className="mt-2 text-xs text-primary font-medium hover:underline"
                       >
-                        Pre-order →
+                        Members only →
                       </button>
                     </div>
                   ))}
@@ -408,7 +396,9 @@ export default function AccountPage() {
       )}
     </div>
   )
-}function WishlistTab({ userId }: { userId: string }) {
+}
+
+function WishlistTab({ userId }: { userId: string }) {
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -428,18 +418,14 @@ export default function AccountPage() {
 
   const remove = async (productId: string) => {
     const supabase = getSupabase()
-    await supabase
-      .from('wishlist')
-      .delete()
-      .eq('user_id', userId)
-      .eq('product_id', productId)
+    await supabase.from('wishlist').delete().eq('user_id', userId).eq('product_id', productId)
     setItems(prev => prev.filter(i => i.product_id !== productId))
     toast.success('Removed from wishlist')
   }
 
   if (loading) return (
     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-      {[1,2,3].map(i => (
+      {[1, 2, 3].map(i => (
         <div key={i} className="card animate-pulse">
           <div className="w-full h-40 bg-slate-200 rounded-t-2xl" />
           <div className="p-4 space-y-2">
@@ -466,29 +452,15 @@ export default function AccountPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
         {items.map(item => (
           <div key={item.id} className="card">
-            <img
-              src={item.product_image}
-              alt={item.product_title}
-              className="w-full h-40 object-cover rounded-t-2xl"
-            />
+            <img src={item.product_image} alt={item.product_title} className="w-full h-40 object-cover rounded-t-2xl" />
             <div className="p-4">
-              <p className="font-semibold text-sm line-clamp-1 mb-1">
-                {item.product_title}
-              </p>
-              <p className="text-primary font-bold mb-3">${item.product_price}</p>
+              <p className="font-semibold text-sm line-clamp-1 mb-1">{item.product_title}</p>
+              <p className="text-primary font-bold mb-3">₹{(item.product_price * 83).toFixed(0)}</p>
               <div className="flex gap-2">
-                <Link
-                  href={`/shop/${item.product_id}`}
-                  className="btn-primary text-xs py-2 flex-1 text-center"
-                >
+                <Link href={`/shop/${item.product_id}`} className="btn-primary text-xs py-2 flex-1 text-center">
                   View Product
                 </Link>
-                <button
-                  onClick={() => remove(item.product_id)}
-                  className="btn-secondary text-xs py-2 px-3"
-                >
-                  🗑️
-                </button>
+                <button onClick={() => remove(item.product_id)} className="btn-secondary text-xs py-2 px-3">🗑️</button>
               </div>
             </div>
           </div>
@@ -497,4 +469,3 @@ export default function AccountPage() {
     </div>
   )
 }
-
