@@ -1,7 +1,11 @@
 'use client'
 import { useState, useEffect } from 'react'
 import useCartStore from '@/store/cartStore'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import { CheckCircle } from 'lucide-react'
