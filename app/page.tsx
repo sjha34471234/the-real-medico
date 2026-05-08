@@ -1,115 +1,51 @@
-'use client'
-import Link from 'next/link'
-import { useState } from 'react'
-import ProductGrid from '@/components/ProductGrid'
-import toast from 'react-hot-toast'
+import { Suspense } from 'react'
+import HomeClient from '@/components/HomeClient'
 
-export default function HomePage() {
-  const [email, setEmail] = useState('')
-
-  const handleSubscribe = async () => {
-    if (!email) return
-    try {
-      await fetch('/api/newsletter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      toast.success('Subscribed!')
-      setEmail('')
-    } catch {
-      toast.error('Error')
-    }
+async function getFeaturedProducts() {
+  try {
+    const response = await fetch(
+      `https://api.printify.com/v1/shops/${process.env.PRINTIFY_SHOP_ID}/products.json?limit=4`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PRINTIFY_API_KEY}`,
+        },
+        next: { revalidate: 3600 },
+      }
+    )
+    if (!response.ok) throw new Error('Printify failed')
+    const data = await response.json()
+    return data.data.slice(0, 4).map((p: any) => ({
+      id: p.id,
+      title: p.title,
+      description: p.description,
+      price: p.variants[0]?.price / 100 || 0,
+      image: p.images[0]?.src || 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Product',
+      images: p.images.map((img: any) => img.src),
+      category: p.tags?.[0]?.toLowerCase() || 'general',
+      variants: p.variants.map((v: any) => ({
+        id: v.id,
+        title: v.title,
+        price: v.price / 100,
+        available: v.is_available,
+      })),
+    }))
+  } catch {
+    return []
   }
+}
 
-  return (
-    <div>
-      <section className="bg-gradient-to-br from-primary to-primary-dark text-white py-20 px-4">
-        <div className="max-w-6xl mx-auto text-center">
-          <h1 className="text-4xl md:text-6xl font-heading font-black mb-6">
-            Wear Your Passion for Medicine
-          </h1>
-          <p className="text-xl mb-8 text-blue-100 max-w-2xl mx-auto">
-            Premium merchandise for healthcare heroes.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/shop" className="bg-white text-primary px-8 py-4 rounded-xl font-bold text-lg">
-              Shop Now
-            </Link>
-            <Link href="/about" className="border-2 border-white text-white px-8 py-4 rounded-xl font-bold text-lg">
-              Our Story
-            </Link>
-          </div>
-        </div>
-      </section>
+export const metadata = {
+  title: 'The Real Medico — Premium Medical Merchandise',
+  description: 'Premium merchandise for healthcare heroes. T-shirts, hoodies, mugs and more designed for medical professionals.',
+  openGraph: {
+    title: 'The Real Medico',
+    description: 'Premium merchandise for healthcare heroes.',
+    type: 'website',
+    url: 'https://therealmedico.store',
+  },
+}
 
-      <section className="py-16 bg-accent px-4">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-heading font-bold text-center text-primary mb-12">
-            How It Works
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="text-center p-6 bg-white rounded-2xl shadow-sm">
-              <div className="text-5xl font-black text-primary mb-4">01</div>
-              <h3 className="text-xl font-bold mb-2">Browse</h3>
-              <p className="text-text-slate">Explore our medical-themed collection.</p>
-            </div>
-            <div className="text-center p-6 bg-white rounded-2xl shadow-sm">
-              <div className="text-5xl font-black text-primary mb-4">02</div>
-              <h3 className="text-xl font-bold mb-2">Order</h3>
-              <p className="text-text-slate">Choose size and quantity. Secure checkout.</p>
-            </div>
-            <div className="text-center p-6 bg-white rounded-2xl shadow-sm">
-              <div className="text-5xl font-black text-primary mb-4">03</div>
-              <h3 className="text-xl font-bold mb-2">Delivered</h3>
-              <p className="text-text-slate">Printed and shipped to your door.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="py-16 px-4">
-        <div className="max-w-6xl mx-auto">
-          <h2 className="text-3xl font-heading font-bold text-center text-primary mb-4">
-            Featured Products
-          </h2>
-          <p className="text-center text-text-slate mb-12">
-            Bestsellers loved by healthcare professionals
-          </p>
-          <ProductGrid featured={true} />
-          <div className="text-center mt-10">
-            <Link href="/shop" className="btn-primary inline-block">
-              View All Products
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="py-16 bg-primary text-white px-4">
-        <div className="max-w-xl mx-auto text-center">
-          <h2 className="text-3xl font-heading font-bold mb-4">
-            Stay in the Loop
-          </h2>
-          <p className="text-blue-100 mb-8">
-            Exclusive offers for healthcare workers.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              type="email"
-              placeholder="Your email address"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="flex-1 px-4 py-3 rounded-lg text-text-dark focus:outline-none"
-            />
-            <button
-              onClick={handleSubscribe}
-              className="bg-white text-primary px-6 py-3 rounded-lg font-bold"
-            >
-              Subscribe
-            </button>
-          </div>
-        </div>
-      </section>
-    </div>
-  )
+export default async function HomePage() {
+  const featuredProducts = await getFeaturedProducts()
+  return <HomeClient featuredProducts={featuredProducts} />
 }
