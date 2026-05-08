@@ -18,17 +18,17 @@ const TABS = [
   { id: 'membership', label: '👨‍⚕️ Real Medico+' },
 ]
 
-// ⚠️ Replace this with your real Patreon page URL when it's ready
 const PATREON_URL = 'https://www.patreon.com/therealmedico'
 
 export default function AccountPage() {
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login')
   const [form, setForm] = useState({ email: '', password: '', name: '' })
   const [loading, setLoading] = useState(false)
   const [user, setUser] = useState<any>(null)
   const [mounted, setMounted] = useState(false)
   const [activeTab, setActiveTab] = useState('overview')
   const [isMember, setIsMember] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -37,11 +37,23 @@ export default function AccountPage() {
       supabase.auth.getSession().then(async ({ data }) => {
         if (data.session?.user) {
           setUser(data.session.user)
-          // Check if user has active membership
           const { data: membership } = await supabase
             .from('memberships')
             .select('*')
             .eq('user_id', data.session.user.id)
+            .eq('active', true)
+            .single()
+          if (membership) setIsMember(true)
+        }
+      })
+      // Listen for OAuth redirect
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          setUser(session.user)
+          const { data: membership } = await supabase
+            .from('memberships')
+            .select('*')
+            .eq('user_id', session.user.id)
             .eq('active', true)
             .single()
           if (membership) setIsMember(true)
@@ -67,7 +79,7 @@ export default function AccountPage() {
           options: { data: { name: form.name } },
         })
         if (error) throw error
-        toast.success('Account created!')
+        toast.success('Account created! Check your email to verify.')
         if (data.user) setUser(data.user)
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -80,6 +92,33 @@ export default function AccountPage() {
       }
     } catch (error: any) {
       toast.error(error.message || 'Authentication failed')
+    }
+    setLoading(false)
+  }
+
+  const handleGoogleLogin = async () => {
+    const supabase = getSupabase()
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/account`,
+      },
+    })
+    if (error) toast.error('Google login failed. Please try again.')
+  }
+
+  const handleResetPassword = async () => {
+    if (!form.email.trim()) { toast.error('Enter your email address first'); return }
+    setLoading(true)
+    const supabase = getSupabase()
+    const { error } = await supabase.auth.resetPasswordForEmail(form.email, {
+      redirectTo: `${window.location.origin}/account/reset-password`,
+    })
+    if (error) {
+      toast.error('Failed to send reset email')
+    } else {
+      setResetSent(true)
+      toast.success('Password reset email sent! Check your inbox.')
     }
     setLoading(false)
   }
@@ -103,26 +142,109 @@ export default function AccountPage() {
   if (!user) return (
     <div className="max-w-md mx-auto px-4 py-16">
       <h1 className="text-3xl font-heading font-bold text-primary mb-2 text-center">
-        {mode === 'login' ? 'Welcome Back' : 'Create Account'}
+        {mode === 'login' ? 'Welcome Back' : mode === 'register' ? 'Create Account' : 'Reset Password'}
       </h1>
       <p className="text-text-slate text-center mb-8">
-        {mode === 'login' ? 'Sign in to your account' : 'Join The Real Medico'}
+        {mode === 'login' ? 'Sign in to your account' : mode === 'register' ? 'Join The Real Medico' : 'Enter your email to reset your password'}
       </p>
+
       <div className="card p-6 space-y-4">
-        {mode === 'register' && (
-          <input name="name" placeholder="Full Name" value={form.name} onChange={update} className="input-field" />
+
+        {/* Reset password mode */}
+        {mode === 'reset' && (
+          <>
+            {resetSent ? (
+              <div className="text-center py-4">
+                <div className="text-5xl mb-3">📧</div>
+                <p className="font-semibold text-text-dark mb-1">Check your inbox!</p>
+                <p className="text-text-slate text-sm">We sent a password reset link to <strong>{form.email}</strong></p>
+              </div>
+            ) : (
+              <>
+                <input
+                  name="email"
+                  type="email"
+                  placeholder="Your email address"
+                  value={form.email}
+                  onChange={update}
+                  className="input-field"
+                />
+                <button onClick={handleResetPassword} disabled={loading} className="btn-primary w-full">
+                  {loading ? 'Sending...' : 'Send Reset Link'}
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => { setMode('login'); setResetSent(false) }}
+              className="w-full text-center text-sm text-primary hover:underline"
+            >
+              ← Back to Sign In
+            </button>
+          </>
         )}
-        <input name="email" type="email" placeholder="Email Address" value={form.email} onChange={update} className="input-field" />
-        <input name="password" type="password" placeholder="Password (min 6 characters)" value={form.password} onChange={update} onKeyDown={e => e.key === 'Enter' && handleAuth()} className="input-field" />
-        <button onClick={handleAuth} disabled={loading} className="btn-primary w-full">
-          {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
-        </button>
-        <p className="text-center text-sm text-text-slate">
-          {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-          <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-primary font-semibold hover:underline">
-            {mode === 'login' ? 'Register' : 'Sign In'}
-          </button>
-        </p>
+
+        {/* Login / Register mode */}
+        {mode !== 'reset' && (
+          <>
+            {/* Google login button */}
+            <button
+              onClick={handleGoogleLogin}
+              className="w-full flex items-center justify-center gap-3 border-2 border-slate-200 hover:border-primary rounded-xl py-3 px-4 font-medium transition-all hover:bg-blue-50"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Continue with Google
+            </button>
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
+              <div className="relative flex justify-center text-xs text-text-slate bg-white px-3 w-fit mx-auto">or continue with email</div>
+            </div>
+
+            {mode === 'register' && (
+              <input name="name" placeholder="Full Name" value={form.name} onChange={update} className="input-field" />
+            )}
+            <input name="email" type="email" placeholder="Email Address" value={form.email} onChange={update} className="input-field" />
+            <div>
+              <input
+                name="password"
+                type="password"
+                placeholder="Password (min 6 characters)"
+                value={form.password}
+                onChange={update}
+                onKeyDown={e => e.key === 'Enter' && handleAuth()}
+                className="input-field"
+              />
+              {mode === 'login' && (
+                <button
+                  onClick={() => setMode('reset')}
+                  className="text-xs text-primary hover:underline mt-1 block ml-auto"
+                >
+                  Forgot password?
+                </button>
+              )}
+            </div>
+
+            <button onClick={handleAuth} disabled={loading} className="btn-primary w-full">
+              {loading ? 'Please wait...' : mode === 'login' ? 'Sign In' : 'Create Account'}
+            </button>
+
+            <p className="text-center text-sm text-text-slate">
+              {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+              <button
+                onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+                className="text-primary font-semibold hover:underline"
+              >
+                {mode === 'login' ? 'Register' : 'Sign In'}
+              </button>
+            </p>
+          </>
+        )}
       </div>
     </div>
   )
@@ -132,12 +254,15 @@ export default function AccountPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-primary text-white flex items-center justify-center text-2xl font-bold">
-            {user.email[0].toUpperCase()}
+          <div className="w-14 h-14 rounded-full bg-primary text-white flex items-center justify-center text-2xl font-bold overflow-hidden">
+            {user.user_metadata?.avatar_url
+              ? <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+              : user.email[0].toUpperCase()
+            }
           </div>
           <div>
             <h1 className="text-2xl font-heading font-bold text-primary">
-              {user.user_metadata?.name || 'My Account'}
+              {user.user_metadata?.full_name || user.user_metadata?.name || 'My Account'}
             </h1>
             <p className="text-text-slate text-sm">{user.email}</p>
             {isMember && (
@@ -159,9 +284,7 @@ export default function AccountPage() {
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-              activeTab === tab.id
-                ? 'bg-primary text-white'
-                : 'bg-accent text-primary hover:bg-slate-200'
+              activeTab === tab.id ? 'bg-primary text-white' : 'bg-accent text-primary hover:bg-slate-200'
             }`}
           >
             {tab.label}
@@ -176,7 +299,7 @@ export default function AccountPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="text-sm text-text-slate mb-1 block">Full Name</label>
-              <p className="input-field bg-slate-50">{user.user_metadata?.name || '—'}</p>
+              <p className="input-field bg-slate-50">{user.user_metadata?.full_name || user.user_metadata?.name || '—'}</p>
             </div>
             <div>
               <label className="text-sm text-text-slate mb-1 block">Email</label>
@@ -208,9 +331,7 @@ export default function AccountPage() {
       )}
 
       {/* WISHLIST */}
-      {activeTab === 'wishlist' && (
-        <WishlistTab userId={user.id} />
-      )}
+      {activeTab === 'wishlist' && <WishlistTab userId={user.id} />}
 
       {/* REVIEWS */}
       {activeTab === 'reviews' && (
@@ -230,17 +351,13 @@ export default function AccountPage() {
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold">Saved Addresses</h2>
-            <Link href="/account/addresses" className="btn-primary text-sm py-2 px-4">
-              + Manage Addresses
-            </Link>
+            <Link href="/account/addresses" className="btn-primary text-sm py-2 px-4">+ Manage Addresses</Link>
           </div>
           <div className="card p-8 text-center">
             <div className="text-5xl mb-4">📍</div>
             <p className="text-text-slate font-medium mb-2">Manage your saved addresses</p>
             <p className="text-text-slate text-sm mb-4">Add, edit or set a default address for faster checkout</p>
-            <Link href="/account/addresses" className="btn-primary inline-block">
-              Go to Addresses
-            </Link>
+            <Link href="/account/addresses" className="btn-primary inline-block">Go to Addresses</Link>
           </div>
         </div>
       )}
@@ -249,9 +366,7 @@ export default function AccountPage() {
       {activeTab === 'membership' && (
         <div className="space-y-6">
           <h2 className="text-xl font-bold">Real Medico+ Membership</h2>
-
           {isMember ? (
-            // ✅ MEMBER VIEW — show Patreon access button
             <div className="space-y-4">
               <div className="card p-6 border-2 border-primary">
                 <div className="flex items-center gap-3 mb-4">
@@ -261,28 +376,18 @@ export default function AccountPage() {
                     <p className="text-text-slate text-sm">Your exclusive community access is active</p>
                   </div>
                 </div>
-                <a
-                  href={PATREON_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-primary w-full text-center block"
-                >
+                <a href={PATREON_URL} target="_blank" rel="noopener noreferrer" className="btn-primary w-full text-center block">
                   🎨 Open Real Medico+ on Patreon →
                 </a>
               </div>
-
               <div className="card p-5 bg-accent">
                 <p className="text-sm text-text-slate text-center">
                   To manage or cancel your membership, visit your{' '}
-                  <a href={PATREON_URL} target="_blank" rel="noopener noreferrer" className="text-primary font-semibold hover:underline">
-                    Patreon settings
-                  </a>
-                  .
+                  <a href={PATREON_URL} target="_blank" rel="noopener noreferrer" className="text-primary font-semibold hover:underline">Patreon settings</a>.
                 </p>
               </div>
             </div>
           ) : (
-            // 🔒 NON-MEMBER VIEW — benefits + how to join via Patreon
             <>
               <div className="bg-gradient-to-br from-primary to-primary-dark text-white rounded-2xl p-8">
                 <div className="flex items-center gap-3 mb-6">
@@ -292,11 +397,8 @@ export default function AccountPage() {
                     <p className="text-blue-200">Premium membership for healthcare professionals</p>
                   </div>
                 </div>
-                <div className="text-4xl font-black mb-1">
-                  ₹415<span className="text-xl font-normal text-blue-200">/month</span>
-                </div>
-                <p className="text-blue-200 text-sm mb-2">~$5 · Cancel anytime on Patreon</p>
-
+                <div className="text-4xl font-black mb-1">₹415<span className="text-xl font-normal text-blue-200">/month</span></div>
+                <p className="text-blue-200 text-sm mb-6">~$5 · Cancel anytime</p>
                 <button
                   onClick={async () => {
                     try {
@@ -342,12 +444,8 @@ export default function AccountPage() {
                 >
                   Join Real Medico+ →
                 </button>
-                <p className="text-blue-200 text-xs text-center mt-3">
-                  🔒 Exclusive membership — not open to general public
-                </p>
+                <p className="text-blue-200 text-xs text-center mt-3">🔒 Exclusive membership — not open to general public</p>
               </div>
-
-              {/* Benefits */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {[
                   { icon: '🛍️', title: 'Early Access', desc: 'Get access to new products before they launch to the general public. Place orders up to 7 days early.' },
@@ -365,30 +463,6 @@ export default function AccountPage() {
                     </div>
                   </div>
                 ))}
-              </div>
-
-              <div className="card p-6 bg-accent">
-                <h3 className="font-bold mb-3">Members Only — Coming Soon Preview</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {[
-                    { name: 'Surgeon Scrub Cap', price: '₹2,074', date: 'June 2026' },
-                    { name: 'Medical Lab Coat', price: '₹7,469', date: 'July 2026' },
-                    { name: 'Doctor Tote Bag', price: '₹2,904', date: 'July 2026' },
-                  ].map((product) => (
-                    <div key={product.name} className="bg-white rounded-xl p-4 text-center">
-                      <div className="w-full h-24 bg-slate-100 rounded-lg mb-3 flex items-center justify-center text-3xl">🔒</div>
-                      <p className="font-semibold text-sm">{product.name}</p>
-                      <p className="text-primary font-bold">{product.price}</p>
-                      <p className="text-text-slate text-xs">Available {product.date}</p>
-                      <button
-                        onClick={() => toast.error('Join Real Medico+ on Patreon to pre-order!')}
-                        className="mt-2 text-xs text-primary font-medium hover:underline"
-                      >
-                        Members only →
-                      </button>
-                    </div>
-                  ))}
-                </div>
               </div>
             </>
           )}
@@ -457,9 +531,7 @@ function WishlistTab({ userId }: { userId: string }) {
               <p className="font-semibold text-sm line-clamp-1 mb-1">{item.product_title}</p>
               <p className="text-primary font-bold mb-3">₹{(item.product_price * 83).toFixed(0)}</p>
               <div className="flex gap-2">
-                <Link href={`/shop/${item.product_id}`} className="btn-primary text-xs py-2 flex-1 text-center">
-                  View Product
-                </Link>
+                <Link href={`/shop/${item.product_id}`} className="btn-primary text-xs py-2 flex-1 text-center">View Product</Link>
                 <button onClick={() => remove(item.product_id)} className="btn-secondary text-xs py-2 px-3">🗑️</button>
               </div>
             </div>
