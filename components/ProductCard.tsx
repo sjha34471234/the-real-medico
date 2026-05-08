@@ -2,8 +2,14 @@
 import Link from 'next/link'
 import { ShoppingCart, Heart } from 'lucide-react'
 import useCartStore from '@/store/cartStore'
-import useWishlistStore from '@/store/wishlistStore'
 import toast from 'react-hot-toast'
+import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
+
+const getSupabase = () => createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 interface Product {
   id: string
@@ -16,8 +22,25 @@ interface Product {
 
 export default function ProductCard({ product }: { product: Product }) {
   const addItem = useCartStore((s) => s.addItem)
-  const { addItem: addToWishlist, removeItem: removeFromWishlist, isInWishlist } = useWishlistStore()
-  const wishlisted = isInWishlist(product.id)
+  const [wishlisted, setWishlisted] = useState(false)
+  const [wishlistLoading, setWishlistLoading] = useState(false)
+
+  // Check if already wishlisted on mount
+  useEffect(() => {
+    const check = async () => {
+      const supabase = getSupabase()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data } = await supabase
+        .from('wishlist')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('product_id', product.id)
+        .single()
+      if (data) setWishlisted(true)
+    }
+    check()
+  }, [product.id])
 
   const handleAddToCart = () => {
     addItem({
@@ -33,14 +56,46 @@ export default function ProductCard({ product }: { product: Product }) {
     toast.success(`${product.title} added to cart!`)
   }
 
-  const handleWishlist = () => {
+  const handleWishlist = async () => {
+    if (wishlistLoading) return
+    setWishlistLoading(true)
+
+    const supabase = getSupabase()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    // Not logged in — prompt to login
+    if (!user) {
+      toast.error('Please log in to save to wishlist')
+      setWishlistLoading(false)
+      return
+    }
+
     if (wishlisted) {
-      removeFromWishlist(product.id)
+      // Remove from wishlist
+      await supabase
+        .from('wishlist')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('product_id', product.id)
+      setWishlisted(false)
       toast('Removed from wishlist', { icon: '💔' })
     } else {
-      addToWishlist(product)
-      toast.success('Added to wishlist! ❤️')
+      // Add to wishlist
+      const { error } = await supabase.from('wishlist').insert({
+        user_id: user.id,
+        product_id: product.id,
+        product_title: product.title,
+        product_image: product.image,
+        product_price: product.price,
+      })
+      if (error) {
+        toast.error('Could not save to wishlist')
+      } else {
+        setWishlisted(true)
+        toast.success('Added to wishlist! ❤️')
+      }
     }
+    setWishlistLoading(false)
   }
 
   return (
@@ -56,9 +111,10 @@ export default function ProductCard({ product }: { product: Product }) {
           />
         </Link>
 
-        {/* Wishlist button — top right, always visible */}
+        {/* Wishlist button — top right */}
         <button
           onClick={handleWishlist}
+          disabled={wishlistLoading}
           className={`absolute top-3 right-3 p-2 rounded-lg shadow-lg transition-all ${
             wishlisted
               ? 'bg-red-500 text-white'
@@ -85,7 +141,7 @@ export default function ProductCard({ product }: { product: Product }) {
           </h3>
         </Link>
         <div className="flex items-center justify-between">
-          <span className="text-primary font-bold text-lg">${product.price}</span>
+          <span className="text-primary font-bold text-lg">₹{(product.price * 83).toFixed(0)}</span>
           <button
             onClick={handleAddToCart}
             className="text-sm btn-primary py-1.5 px-3"
