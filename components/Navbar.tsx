@@ -16,7 +16,8 @@ export default function Navbar() {
           </span>
         </Link>
         {/* Desktop Nav */}
-        <div className="hidden md:flex items-center gap-8">
+<div className="hidden md:flex items-center gap-6">
+
           <Link href="/shop" className="text-text-dark hover:text-primary font-medium transition-colors">
             Shop
           </Link>
