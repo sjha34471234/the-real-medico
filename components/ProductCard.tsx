@@ -5,6 +5,7 @@ import useCartStore from '@/store/cartStore'
 import toast from 'react-hot-toast'
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { useCurrencyStore } from '@/store/currencyStore'
 
 const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -24,6 +25,7 @@ export default function ProductCard({ product }: { product: Product }) {
   const addItem = useCartStore((s) => s.addItem)
   const [wishlisted, setWishlisted] = useState(false)
   const [wishlistLoading, setWishlistLoading] = useState(false)
+  const { formatPrice } = useCurrencyStore()
 
   // Check if already wishlisted on mount
   useEffect(() => {
@@ -63,7 +65,6 @@ export default function ProductCard({ product }: { product: Product }) {
     const supabase = getSupabase()
     const { data: { user } } = await supabase.auth.getUser()
 
-    // Not logged in — prompt to login
     if (!user) {
       toast.error('Please log in to save to wishlist')
       setWishlistLoading(false)
@@ -71,7 +72,6 @@ export default function ProductCard({ product }: { product: Product }) {
     }
 
     if (wishlisted) {
-      // Remove from wishlist
       await supabase
         .from('wishlist')
         .delete()
@@ -80,7 +80,6 @@ export default function ProductCard({ product }: { product: Product }) {
       setWishlisted(false)
       toast('Removed from wishlist', { icon: '💔' })
     } else {
-      // Add to wishlist
       const { error } = await supabase.from('wishlist').insert({
         user_id: user.id,
         product_id: product.id,
@@ -102,7 +101,6 @@ export default function ProductCard({ product }: { product: Product }) {
     <div className="card group hover:shadow-md transition-all duration-300">
       <div className="relative overflow-hidden">
 
-        {/* Clicking image goes to product page */}
         <Link href={`/shop/${product.id}`}>
           <img
             src={product.image}
@@ -111,23 +109,22 @@ export default function ProductCard({ product }: { product: Product }) {
           />
         </Link>
 
-        {/* Wishlist button — top right */}
         <button
           onClick={handleWishlist}
           disabled={wishlistLoading}
+          aria-label={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
           className={`absolute top-3 right-3 p-2 rounded-lg shadow-lg transition-all ${
             wishlisted
               ? 'bg-red-500 text-white'
               : 'bg-white text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100'
           }`}
-          title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
         >
           <Heart className={`w-4 h-4 ${wishlisted ? 'fill-white' : ''}`} />
         </button>
 
-        {/* Add to cart button — bottom right on hover */}
         <button
           onClick={handleAddToCart}
+          aria-label={`Add ${product.title} to cart`}
           className="absolute bottom-3 right-3 bg-primary text-white p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shadow-lg hover:bg-primary-dark"
         >
           <ShoppingCart className="w-5 h-5" />
@@ -141,7 +138,9 @@ export default function ProductCard({ product }: { product: Product }) {
           </h3>
         </Link>
         <div className="flex items-center justify-between">
-          <span className="text-primary font-bold text-lg">₹{(product.price * 83).toFixed(0)}</span>
+          <span className="text-primary font-bold text-lg">
+            {formatPrice(product.price)}
+          </span>
           <button
             onClick={handleAddToCart}
             className="text-sm btn-primary py-1.5 px-3"
