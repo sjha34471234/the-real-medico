@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
+import { useCurrencyStore } from '@/store/currencyStore'
 
 const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,7 +47,6 @@ export default function AccountPage() {
           if (membership) setIsMember(true)
         }
       })
-      // Listen for OAuth redirect
       supabase.auth.onAuthStateChange(async (event, session) => {
         if (session?.user) {
           setUser(session.user)
@@ -100,9 +100,7 @@ export default function AccountPage() {
     const supabase = getSupabase()
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/account`,
-      },
+      options: { redirectTo: `${window.location.origin}/account` },
     })
     if (error) toast.error('Google login failed. Please try again.')
   }
@@ -150,7 +148,6 @@ export default function AccountPage() {
 
       <div className="card p-6 space-y-4">
 
-        {/* Reset password mode */}
         {mode === 'reset' && (
           <>
             {resetSent ? (
@@ -183,10 +180,8 @@ export default function AccountPage() {
           </>
         )}
 
-        {/* Login / Register mode */}
         {mode !== 'reset' && (
           <>
-            {/* Google login button */}
             <button
               onClick={handleGoogleLogin}
               className="w-full flex items-center justify-center gap-3 border-2 border-slate-200 hover:border-primary rounded-xl py-3 px-4 font-medium transition-all hover:bg-blue-50"
@@ -200,7 +195,6 @@ export default function AccountPage() {
               Continue with Google
             </button>
 
-            {/* Divider */}
             <div className="relative">
               <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200" /></div>
               <div className="relative flex justify-center text-xs text-text-slate bg-white px-3 w-fit mx-auto">or continue with email</div>
@@ -475,6 +469,7 @@ export default function AccountPage() {
 function WishlistTab({ userId }: { userId: string }) {
   const [items, setItems] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const { formatPrice } = useCurrencyStore()
 
   useEffect(() => {
     const load = async () => {
@@ -529,10 +524,14 @@ function WishlistTab({ userId }: { userId: string }) {
             <img src={item.product_image} alt={item.product_title} className="w-full h-40 object-cover rounded-t-2xl" />
             <div className="p-4">
               <p className="font-semibold text-sm line-clamp-1 mb-1">{item.product_title}</p>
-              <p className="text-primary font-bold mb-3">₹{(item.product_price * 83).toFixed(0)}</p>
+              <p className="text-primary font-bold mb-3">{formatPrice(item.product_price)}</p>
               <div className="flex gap-2">
                 <Link href={`/shop/${item.product_id}`} className="btn-primary text-xs py-2 flex-1 text-center">View Product</Link>
-                <button onClick={() => remove(item.product_id)} className="btn-secondary text-xs py-2 px-3">🗑️</button>
+                <button
+                  onClick={() => remove(item.product_id)}
+                  aria-label="Remove from wishlist"
+                  className="btn-secondary text-xs py-2 px-3"
+                >🗑️</button>
               </div>
             </div>
           </div>
