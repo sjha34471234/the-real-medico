@@ -2,7 +2,7 @@
 import CurrencySelector from '@/components/CurrencySelector';
 import { useCurrencyStore } from '@/store/currencyStore';
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ShoppingCart, Menu, X, User, Search } from 'lucide-react'
 import useCartStore from '@/store/cartStore'
@@ -90,6 +90,11 @@ function SearchButton() {
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const cartCount = useCartStore((s) => s.items.reduce((a, i) => a + i.quantity, 0))
+  const { initCurrency } = useCurrencyStore()
+
+  useEffect(() => {
+    initCurrency()
+  }, [])
 
   return (
     <nav className="sticky top-0 z-40 bg-white border-b border-slate-100 shadow-sm">
@@ -123,6 +128,9 @@ export default function Navbar() {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
+          {/* Currency Selector */}
+          <CurrencySelector variant="navbar" />
+
           {/* Search */}
           <SearchButton />
 
@@ -183,6 +191,11 @@ export default function Navbar() {
             </Link>
           ))}
           <div className="border-t border-slate-100 mt-2 pt-2">
+            {/* Currency selector in mobile menu */}
+            <div className="flex items-center justify-between px-3 py-3">
+              <span className="font-medium text-text-dark">Currency</span>
+              <CurrencySelector variant="navbar" />
+            </div>
             <Link
               href="/cart"
               className="flex items-center gap-2 font-medium text-primary hover:bg-accent px-3 py-3 rounded-lg transition-colors"
