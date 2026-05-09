@@ -4,14 +4,16 @@ import useCartStore from '@/store/cartStore'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
+import { useCurrencyStore, CURRENCY_CONFIG } from '@/store/currencyStore'
+import CurrencySelector from '@/components/CurrencySelector'
 
 const getSupabase = () => createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-function MembershipFOMOBanner({ onDismiss }: { onDismiss: () => void }) {
-  const [timeLeft, setTimeLeft] = useState(600) // 10 min countdown
+function MembershipFOMOBanner({ onDismiss, savings }: { onDismiss: () => void; savings: string }) {
+  const [timeLeft, setTimeLeft] = useState(600)
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -28,7 +30,6 @@ function MembershipFOMOBanner({ onDismiss }: { onDismiss: () => void }) {
 
   return (
     <div className="relative bg-gradient-to-r from-primary to-primary-dark text-white rounded-2xl p-5 mb-6 overflow-hidden">
-      {/* Background pattern */}
       <div className="absolute inset-0 opacity-10">
         <div className="absolute top-2 right-4 text-6xl">⭐</div>
         <div className="absolute bottom-2 left-4 text-4xl">🏥</div>
@@ -36,6 +37,7 @@ function MembershipFOMOBanner({ onDismiss }: { onDismiss: () => void }) {
 
       <button
         onClick={onDismiss}
+        aria-label="Dismiss offer"
         className="absolute top-3 right-3 text-white/60 hover:text-white text-xl leading-none"
       >
         ×
@@ -56,7 +58,7 @@ function MembershipFOMOBanner({ onDismiss }: { onDismiss: () => void }) {
         </h3>
         <p className="text-blue-100 text-sm mb-4">
           Real Medico+ members save <strong className="text-yellow-300">15% on this order</strong> — that's{' '}
-          <strong className="text-yellow-300">instant savings</strong> applied right now.
+          <strong className="text-yellow-300">{savings} instant savings</strong> applied right now.
           Plus <strong className="text-yellow-300">free shipping forever</strong>.
         </p>
 
@@ -99,6 +101,7 @@ function MembershipFOMOBanner({ onDismiss }: { onDismiss: () => void }) {
 
 export default function CheckoutPage() {
   const { items, total, clearCart } = useCartStore()
+  const { currency, rates, formatPrice } = useCurrencyStore()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [showFOMO, setShowFOMO] = useState(false)
@@ -116,7 +119,6 @@ export default function CheckoutPage() {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session?.user) return
 
-        // Check membership
         const { data: membership } = await supabase
           .from('memberships')
           .select('active')
@@ -129,7 +131,6 @@ export default function CheckoutPage() {
           return
         }
 
-        // Check past orders
         const { data: orders } = await supabase
           .from('orders')
           .select('id')
@@ -164,14 +165,24 @@ export default function CheckoutPage() {
     setStep(3)
   }
 
+  // All price calculations stay in USD internally, convert only for display + Razorpay
+  const subtotalUSD = total()
+  const discountedUSD = isMember ? subtotalUSD * 0.85 : subtotalUSD
+  const savingsUSD = isMember ? subtotalUSD * 0.15 : 0
+  const rate = rates[currency] ?? 83
+  // Razorpay expects amount in smallest currency unit (paise, cents, fils, etc.)
+  const razorpayAmount = Math.round(discountedUSD * rate * 100)
+
   const handlePayment = async () => {
     setLoading(true)
     try {
-      const orderTotal = isMember ? total() * 0.85 : total()
       const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: orderTotal * 83 }),
+        body: JSON.stringify({
+          amount: razorpayAmount,
+          currency: currency,
+        }),
       })
       if (!orderRes.ok) throw new Error('Failed to create order')
       const orderData = await orderRes.json()
@@ -224,9 +235,6 @@ export default function CheckoutPage() {
     }
   }
 
-  const discountedTotal = isMember ? total() * 0.85 : total()
-  const savings = isMember ? total() * 0.15 : 0
-
   if (items.length === 0) return (
     <div className="max-w-xl mx-auto px-4 py-24 text-center">
       <div className="text-6xl mb-6">🛒</div>
@@ -245,7 +253,9 @@ export default function CheckoutPage() {
           <span className="text-2xl">⭐</span>
           <div>
             <p className="font-bold text-green-800">Real Medico+ Discount Applied!</p>
-            <p className="text-green-700 text-sm">You're saving <strong>${savings.toFixed(2)}</strong> on this order (15% member discount)</p>
+            <p className="text-green-700 text-sm">
+              You're saving <strong>{formatPrice(savingsUSD)}</strong> on this order (15% member discount)
+            </p>
           </div>
         </div>
       )}
@@ -270,7 +280,10 @@ export default function CheckoutPage() {
 
           {/* FOMO Banner — Step 1 */}
           {step === 1 && showFOMO && !isMember && (
-            <MembershipFOMOBanner onDismiss={() => setShowFOMO(false)} />
+            <MembershipFOMOBanner
+              onDismiss={() => setShowFOMO(false)}
+              savings={formatPrice(subtotalUSD * 0.15)}
+            />
           )}
 
           {/* Step 1 — Contact */}
@@ -345,9 +358,11 @@ export default function CheckoutPage() {
           {/* Step 3 — Payment */}
           {step === 3 && (
             <div className="space-y-4">
-              {/* FOMO Banner — Step 3 */}
               {showFOMO && !isMember && (
-                <MembershipFOMOBanner onDismiss={() => setShowFOMO(false)} />
+                <MembershipFOMOBanner
+                  onDismiss={() => setShowFOMO(false)}
+                  savings={formatPrice(subtotalUSD * 0.15)}
+                />
               )}
 
               <div className="card p-6 space-y-4">
@@ -366,10 +381,19 @@ export default function CheckoutPage() {
                   <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2 text-sm">
                     <span>⭐</span>
                     <span className="text-green-800 font-medium">
-                      15% Real Medico+ discount applied — saving ${savings.toFixed(2)}
+                      15% Real Medico+ discount applied — saving {formatPrice(savingsUSD)}
                     </span>
                   </div>
                 )}
+
+                {/* Currency selector at payment step */}
+                <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-text-dark">Payment Currency</p>
+                    <p className="text-xs text-text-slate">You'll be charged in your selected currency</p>
+                  </div>
+                  <CurrencySelector variant="checkout" />
+                </div>
 
                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex items-center gap-3">
                   <span className="text-3xl">🔒</span>
@@ -390,12 +414,12 @@ export default function CheckoutPage() {
                   >
                     {loading
                       ? '⏳ Opening...'
-                      : `Pay $${discountedTotal.toFixed(2)} Securely`
+                      : `Pay ${formatPrice(discountedUSD)} Securely`
                     }
                   </button>
                 </div>
                 <p className="text-center text-xs text-text-slate">
-                  🌍 International cards accepted · Prices in USD
+                  🌍 International cards accepted · Paying in {CURRENCY_CONFIG[currency].label}
                 </p>
               </div>
             </div>
@@ -414,7 +438,7 @@ export default function CheckoutPage() {
                   <p className="text-text-slate text-xs">Size: {item.size} · Qty: {item.quantity}</p>
                 </div>
                 <span className="font-bold text-sm text-primary">
-                  ${(item.price * item.quantity).toFixed(2)}
+                  {formatPrice(item.price * item.quantity)}
                 </span>
               </div>
             ))}
@@ -422,12 +446,12 @@ export default function CheckoutPage() {
           <div className="border-t pt-3 space-y-2">
             <div className="flex justify-between text-sm text-text-slate">
               <span>Subtotal</span>
-              <span>${total().toFixed(2)}</span>
+              <span>{formatPrice(subtotalUSD)}</span>
             </div>
             {isMember && (
               <div className="flex justify-between text-sm text-green-700 font-medium">
                 <span>⭐ Member Discount (15%)</span>
-                <span>-${savings.toFixed(2)}</span>
+                <span>-{formatPrice(savingsUSD)}</span>
               </div>
             )}
             <div className="flex justify-between text-sm text-text-slate">
@@ -438,14 +462,15 @@ export default function CheckoutPage() {
             </div>
             <div className="flex justify-between font-bold text-primary text-lg pt-1 border-t">
               <span>Total</span>
-              <span>${discountedTotal.toFixed(2)}</span>
+              <span>{formatPrice(discountedUSD)}</span>
             </div>
           </div>
 
-          {/* Mini FOMO in summary for non-members */}
           {!isMember && hasOrderedBefore && (
             <div className="mt-4 bg-primary/5 border border-primary/20 rounded-xl p-3">
-              <p className="text-xs text-primary font-semibold mb-1">💡 Members save ${(total() * 0.15).toFixed(2)} on this order</p>
+              <p className="text-xs text-primary font-semibold mb-1">
+                💡 Members save {formatPrice(subtotalUSD * 0.15)} on this order
+              </p>
               <Link href="/account" className="text-xs text-primary underline">
                 Join Real Medico+ →
               </Link>
