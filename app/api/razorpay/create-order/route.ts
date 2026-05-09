@@ -1,30 +1,26 @@
 import { NextResponse } from 'next/server'
 import Razorpay from 'razorpay'
 
-// Shipping charges in INR based on country
-function getShippingCharge(country: string): number {
+type CurrencyCode = 'INR' | 'USD' | 'GBP' | 'AED' | 'SGD' | 'MYR' | 'AUD' | 'CAD'
+
+// Fallback rates vs USD (used only if frontend somehow doesn't send converted amount)
+const USD_RATES: Record<CurrencyCode, number> = {
+  INR: 83, USD: 1, GBP: 0.79, AED: 3.67,
+  SGD: 1.34, MYR: 4.7, AUD: 1.53, CAD: 1.36,
+}
+
+// Shipping charges in INR — we convert to target currency
+function getShippingChargeINR(country: string): number {
   const c = country?.toLowerCase().trim()
-
-  // Free shipping for these
   if (!c || c === 'india') return 0
-
-  // Neighboring / affordable regions
   const zone1 = ['nepal', 'bangladesh', 'sri lanka', 'bhutan', 'myanmar']
   if (zone1.includes(c)) return 299
-
-  // Southeast Asia & Middle East
   const zone2 = ['uae', 'singapore', 'malaysia', 'thailand', 'indonesia', 'philippines', 'vietnam', 'qatar', 'kuwait', 'bahrain', 'oman', 'saudi arabia']
   if (zone2.includes(c)) return 599
-
-  // USA, UK, Europe, Australia, Canada, NZ
   const zone3 = ['united states', 'usa', 'us', 'united kingdom', 'uk', 'canada', 'australia', 'germany', 'france', 'netherlands', 'italy', 'spain', 'sweden', 'norway', 'denmark', 'finland', 'switzerland', 'austria', 'belgium', 'new zealand', 'ireland', 'portugal']
   if (zone3.includes(c)) return 899
-
-  // Africa & South America
   const zone4 = ['south africa', 'nigeria', 'kenya', 'ghana', 'brazil', 'argentina', 'mexico', 'colombia']
   if (zone4.includes(c)) return 1099
-
-  // Everything else
   return 999
 }
 
@@ -35,22 +31,35 @@ export async function POST(req: Request) {
       key_secret: process.env.RAZORPAY_KEY_SECRET!,
     })
 
-    const { amount, country } = await req.json()
+    const { amount, currency = 'INR', country = 'india' } = await req.json()
 
-    const productAmountInPaise = Math.round(Number(amount) * 100)
-    const shippingInPaise = getShippingCharge(country || 'india') * 100
-    const totalInPaise = productAmountInPaise + shippingInPaise
+    const currencyCode = (currency as CurrencyCode) in USD_RATES
+      ? (currency as CurrencyCode)
+      : 'INR'
 
-    if (totalInPaise < 100) {
+    // amount already comes from frontend as smallest unit (paise, cents, fils, etc.)
+    // so we just use it directly — no further multiplication needed
+    const productAmountSmallest = Math.round(Number(amount))
+
+    // Convert shipping from INR to target currency
+    const shippingINR = getShippingChargeINR(country)
+    const shippingConverted = currencyCode === 'INR'
+      ? shippingINR
+      : (shippingINR / USD_RATES['INR']) * USD_RATES[currencyCode]
+    const shippingSmallest = Math.round(shippingConverted * 100)
+
+    const totalSmallest = productAmountSmallest + shippingSmallest
+
+    if (totalSmallest < 100) {
       return NextResponse.json(
-        { error: 'Minimum order amount is ₹1' },
+        { error: `Minimum order amount is 1 ${currencyCode}` },
         { status: 400 }
       )
     }
 
     const order = await razorpay.orders.create({
-      amount: totalInPaise,
-      currency: 'INR',
+      amount: totalSmallest,
+      currency: currencyCode,
       receipt: `trm_${Date.now()}`,
     })
 
@@ -58,9 +67,11 @@ export async function POST(req: Request) {
       order_id: order.id,
       amount: order.amount,
       currency: order.currency,
-      shipping: shippingInPaise / 100,      // in INR for display
-      product_amount: productAmountInPaise / 100,
+      // Return shipping in major units for display
+      shipping: shippingSmallest / 100,
+      product_amount: productAmountSmallest / 100,
     })
+
   } catch (error: any) {
     console.error('Razorpay error:', error?.error || error)
     return NextResponse.json(
