@@ -9,47 +9,48 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
   const [subscribing, setSubscribing] = useState(false)
 
   const handleSubscribe = async () => {
-    if (!email) return
-    setSubscribing(true)
-    try {
-  const handleSubscribe = async () => {
-  if (!email.trim()) {
-    toast.error('Please enter your email address')
-    return
-  }
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  if (!emailRegex.test(email)) {
-    toast.error('Please enter a valid email address')
-    return
-  }
-  setSubscribing(true)
-  try {
-    const res = await fetch('/api/newsletter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
-    })
-    if (res.ok) {
-      toast.success('🎉 You are subscribed! Welcome to The Real Medico family.')
-      setEmail('')
-    } else {
-      const data = await res.json()
-      if (data.error?.includes('duplicate') || res.status === 409) {
-        toast.error('This email is already subscribed!')
-      } else {
-        toast.error('Something went wrong. Please try again.')
-      }
+    if (!email.trim()) {
+      toast.error('Please enter your email address')
+      return
     }
-  } catch {
-    toast.error('Something went wrong. Please try again.')
-  }
-  setSubscribing(false)
-}
 
+    const emailRegex = /^[^\s@]+@[^\s@]+.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      toast.error('Please enter a valid email address')
+      return
+    }
+
+    setSubscribing(true)
+
+    try {
+      const res = await fetch('/api/newsletter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+
+      if (res.ok) {
+        toast.success('🎉 You are subscribed! Welcome to The Real Medico family.')
+        setEmail('')
+      } else {
+        const data = await res.json()
+
+        if (data.error?.includes('duplicate') || res.status === 409) {
+          toast.error('This email is already subscribed!')
+        } else {
+          toast.error('Something went wrong. Please try again.')
+        }
+      }
+    } catch {
+      toast.error('Something went wrong. Please try again.')
+    }
+
+    setSubscribing(false)
+  }
 
   return (
     <div>
-      {/* Hero */}
+      {/* Hero /}
       <section className="bg-gradient-to-br from-primary to-primary-dark text-white py-20 px-4">
         <div className="max-w-6xl mx-auto text-center">
           <h1 className="text-4xl md:text-6xl font-heading font-black mb-6 leading-tight">
@@ -69,12 +70,13 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
         </div>
       </section>
 
-      {/* How It Works */}
+      {/ How It Works /}
       <section className="py-16 bg-accent px-4">
         <div className="max-w-6xl mx-auto">
           <h2 className="text-3xl font-heading font-bold text-center text-primary mb-12">
             How It Works
           </h2>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               { step: '01', title: 'Browse', desc: 'Explore our medical-themed collection designed for healthcare professionals.' },
@@ -91,15 +93,18 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
         </div>
       </section>
 
-      {/* Featured Products */}
+      {/ Featured Products /}
       <section className="py-16 px-4">
         <div className="max-w-6xl mx-auto">
+
           <h2 className="text-3xl font-heading font-bold text-center text-primary mb-4">
             Featured Products
           </h2>
+
           <p className="text-center text-text-slate mb-12">
             Bestsellers loved by healthcare professionals
           </p>
+
           {featuredProducts.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {featuredProducts.map(product => (
@@ -119,21 +124,28 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
               ))}
             </div>
           )}
+
           <div className="text-center mt-10">
             <Link href="/shop" className="btn-primary inline-block">
               View All Products
             </Link>
           </div>
+
         </div>
       </section>
 
-      {/* Newsletter */}
+      {/ Newsletter */}
       <section className="py-16 bg-primary text-white px-4">
         <div className="max-w-xl mx-auto text-center">
-          <h2 className="text-3xl font-heading font-bold mb-4">Stay in the Loop</h2>
+
+          <h2 className="text-3xl font-heading font-bold mb-4">
+            Stay in the Loop
+          </h2>
+
           <p className="text-blue-100 mb-8">
             Exclusive offers for healthcare workers.
           </p>
+
           <div className="flex flex-col sm:flex-row gap-3">
             <input
               type="email"
@@ -143,6 +155,7 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
               onKeyDown={e => e.key === 'Enter' && handleSubscribe()}
               className="flex-1 px-4 py-3 rounded-lg text-text-dark focus:outline-none"
             />
+
             <button
               onClick={handleSubscribe}
               disabled={subscribing}
@@ -151,6 +164,7 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
               {subscribing ? 'Subscribing...' : 'Subscribe'}
             </button>
           </div>
+
         </div>
       </section>
     </div>
