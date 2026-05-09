@@ -34,9 +34,12 @@ export default function Navbar() {
             FAQ
           </Link>
         </div>
-        {/* Right side */}
-        <div className="flex items-center gap-3">
-          {/* Cart */}
+      {/* Right side */}
+<div className="flex items-center gap-3">
+  {/* Search */}
+  <SearchButton />
+  {/* Cart */}
+
           <Link href="/cart" className="relative p-2 hover:bg-accent rounded-lg transition-colors">
             <ShoppingCart className="w-6 h-6 text-text-dark" />
             {cartCount > 0 && (
