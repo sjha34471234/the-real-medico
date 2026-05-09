@@ -99,7 +99,7 @@ export const useCurrencyStore = create<CurrencyState>()(
     }),
     {
       name: 'trm-currency', // localStorage key
-      partialState: (s) => ({ currency: s.currency }), // only persist user's choice, not rates
+      partialize: (s) => ({ currency: s.currency }) as CurrencyState,
     }
   )
 );
