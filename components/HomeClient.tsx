@@ -12,22 +12,40 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
     if (!email) return
     setSubscribing(true)
     try {
-      const res = await fetch('/api/newsletter', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      if (res.ok) {
-        toast.success('Subscribed!')
-        setEmail('')
-      } else {
-        toast.error('Already subscribed or error')
-      }
-    } catch {
-      toast.error('Something went wrong')
-    }
-    setSubscribing(false)
+  const handleSubscribe = async () => {
+  if (!email.trim()) {
+    toast.error('Please enter your email address')
+    return
   }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(email)) {
+    toast.error('Please enter a valid email address')
+    return
+  }
+  setSubscribing(true)
+  try {
+    const res = await fetch('/api/newsletter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    })
+    if (res.ok) {
+      toast.success('🎉 You are subscribed! Welcome to The Real Medico family.')
+      setEmail('')
+    } else {
+      const data = await res.json()
+      if (data.error?.includes('duplicate') || res.status === 409) {
+        toast.error('This email is already subscribed!')
+      } else {
+        toast.error('Something went wrong. Please try again.')
+      }
+    }
+  } catch {
+    toast.error('Something went wrong. Please try again.')
+  }
+  setSubscribing(false)
+}
+
 
   return (
     <div>
