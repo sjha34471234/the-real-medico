@@ -2,9 +2,11 @@
 import Link from 'next/link'
 import { Trash2, Plus, Minus } from 'lucide-react'
 import useCartStore from '@/store/cartStore'
+import { useCurrencyStore } from '@/store/currencyStore'
 
 export default function CartPage() {
   const { items, removeItem, updateQty, total } = useCartStore()
+  const { formatPrice } = useCurrencyStore()
 
   if (items.length === 0) {
     return (
@@ -27,22 +29,18 @@ export default function CartPage() {
           {items.map((item) => (
             <div key={item.id} className="card p-4">
               <div className="flex gap-4">
-                {/* Image */}
                 <img
                   src={item.image}
                   alt={item.title}
                   className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
                 />
-
-                {/* Title + price + controls */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <h3 className="font-bold text-text-dark leading-tight line-clamp-2">{item.title}</h3>
                       <p className="text-text-slate text-sm mt-0.5">Size: {item.size}</p>
-                      <p className="text-primary font-bold mt-1">₹{(item.price * 83).toFixed(0)}</p>
+                      <p className="text-primary font-bold mt-1">{formatPrice(item.price)}</p>
                     </div>
-                    {/* Trash button — always visible top right */}
                     <button
                       onClick={() => removeItem(item.id)}
                       className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg flex-shrink-0 transition-colors"
@@ -52,10 +50,10 @@ export default function CartPage() {
                     </button>
                   </div>
 
-                  {/* Quantity controls — below title on all screen sizes */}
                   <div className="flex items-center gap-2 mt-3">
                     <button
                       onClick={() => updateQty(item.id, Math.max(1, item.quantity - 1))}
+                      aria-label="Decrease quantity"
                       className="p-1.5 rounded-lg bg-accent hover:bg-slate-200 transition-colors"
                     >
                       <Minus className="w-4 h-4" />
@@ -63,12 +61,13 @@ export default function CartPage() {
                     <span className="font-bold w-8 text-center">{item.quantity}</span>
                     <button
                       onClick={() => updateQty(item.id, item.quantity + 1)}
+                      aria-label="Increase quantity"
                       className="p-1.5 rounded-lg bg-accent hover:bg-slate-200 transition-colors"
                     >
                       <Plus className="w-4 h-4" />
                     </button>
                     <span className="text-text-slate text-sm ml-2">
-                      = ₹{(item.price * item.quantity * 83).toFixed(0)}
+                      = {formatPrice(item.price * item.quantity)}
                     </span>
                   </div>
                 </div>
@@ -83,7 +82,7 @@ export default function CartPage() {
           <div className="space-y-3 mb-6">
             <div className="flex justify-between text-text-slate">
               <span>Subtotal ({items.reduce((a, i) => a + i.quantity, 0)} items)</span>
-              <span>₹{(total() * 83).toFixed(0)}</span>
+              <span>{formatPrice(total())}</span>
             </div>
             <div className="flex justify-between text-text-slate">
               <span>Shipping</span>
@@ -91,7 +90,7 @@ export default function CartPage() {
             </div>
             <div className="border-t pt-3 flex justify-between font-bold text-lg">
               <span>Total</span>
-              <span className="text-primary">₹{(total() * 83).toFixed(0)}</span>
+              <span className="text-primary">{formatPrice(total())}</span>
             </div>
           </div>
           <Link href="/checkout" className="btn-primary w-full text-center block">
