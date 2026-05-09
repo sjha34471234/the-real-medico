@@ -3,6 +3,76 @@ import Link from 'next/link'
 import { useState } from 'react'
 import { ShoppingCart, Menu, X, User } from 'lucide-react'
 import useCartStore from '@/store/cartStore'
+function SearchButton() {
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const router = useRouter()
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (query.trim()) {
+      router.push(`/search?q=${encodeURIComponent(query.trim())}`)
+      setOpen(false)
+      setQuery('')
+    }
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="p-2 hover:bg-accent rounded-lg transition-colors"
+        aria-label="Search"
+      >
+        <Search className="w-6 h-6 text-text-dark" />
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-20 px-4 bg-black/50"
+          onClick={() => setOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl p-4"
+            onClick={e => e.stopPropagation()}>
+            <form onSubmit={handleSearch} className="flex gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-text-slate" />
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Search medical merchandise..."
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 border-2 border-slate-200 rounded-xl focus:outline-none focus:border-primary text-base"
+                />
+              </div>
+              <button type="submit" className="btn-primary px-5">
+                Search
+              </button>
+              <button type="button" onClick={() => setOpen(false)} className="p-3 hover:bg-accent rounded-xl">
+                <X className="w-5 h-5" />
+              </button>
+            </form>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="text-xs text-text-slate">Popular:</span>
+              {['stethoscope', 't-shirt', 'mug', 'hoodie', 'doctor'].map(term => (
+                <button
+                  key={term}
+                  onClick={() => {
+                    router.push(`/search?q=${term}`)
+                    setOpen(false)
+                  }}
+                  className="text-xs bg-accent text-primary px-3 py-1 rounded-full hover:bg-primary hover:text-white transition-colors"
+                >
+                  {term}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false)
   const cartCount = useCartStore((s) => s.items.reduce((a, i) => a + i.quantity, 0))
