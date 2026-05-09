@@ -1,4 +1,6 @@
 'use client'
+import CurrencySelector from '@/components/CurrencySelector';
+import { useCurrencyStore } from '@/store/currencyStore';
 import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
