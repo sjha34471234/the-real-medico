@@ -179,10 +179,11 @@ export default function CheckoutPage() {
       const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: razorpayAmount,
-          currency: currency,
-        }),
+body: JSON.stringify({
+  amount: razorpayAmount,
+  currency: currency,
+  country: form.country,
+}),
       })
       if (!orderRes.ok) throw new Error('Failed to create order')
       const orderData = await orderRes.json()
