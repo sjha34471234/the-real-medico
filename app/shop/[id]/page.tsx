@@ -42,7 +42,7 @@ export const revalidate = 0
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
 
-  const product = await getProduct(params.id)
+  const product = await getProduct(id)
   if (!product) return { title: 'Product Not Found' }
   return {
     title: `${product.title} — The Real Medico`,
