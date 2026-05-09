@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { createClient } from '@supabase/supabase-js'
 import Link from 'next/link'
@@ -21,6 +21,19 @@ const TABS = [
 
 const PATREON_URL = 'https://www.patreon.com/therealmedico'
 
+// Single shared supabase instance for this page
+const supabase = getSupabase()
+
+async function checkMembership(userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('memberships')
+    .select('active')
+    .eq('user_id', userId)
+    .eq('active', true)
+    .single()
+  return !!data
+}
+
 export default function AccountPage() {
   const [mode, setMode] = useState<'login' | 'register' | 'reset'>('login')
   const [form, setForm] = useState({ email: '', password: '', name: '' })
@@ -30,38 +43,31 @@ export default function AccountPage() {
   const [activeTab, setActiveTab] = useState('overview')
   const [isMember, setIsMember] = useState(false)
   const [resetSent, setResetSent] = useState(false)
+  const membershipChecked = useRef<string | null>(null) // track which userId we already checked
 
   useEffect(() => {
     setMounted(true)
-    try {
-      const supabase = getSupabase()
-      supabase.auth.getSession().then(async ({ data }) => {
-        if (data.session?.user) {
-          setUser(data.session.user)
-          const { data: membership } = await supabase
-            .from('memberships')
-            .select('*')
-            .eq('user_id', data.session.user.id)
-            .eq('active', true)
-            .single()
-          if (membership) setIsMember(true)
+
+    // Single auth state listener — handles both initial load and OAuth redirects
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        setUser(session.user)
+        // Only check membership once per user session to prevent flicker
+        if (membershipChecked.current !== session.user.id) {
+          membershipChecked.current = session.user.id
+          const member = await checkMembership(session.user.id)
+          setIsMember(member)
         }
-      })
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        if (session?.user) {
-          setUser(session.user)
-          const { data: membership } = await supabase
-            .from('memberships')
-            .select('*')
-            .eq('user_id', session.user.id)
-            .eq('active', true)
-            .single()
-          if (membership) setIsMember(true)
-        }
-      })
-    } catch (e) {
-      console.error('Supabase init error:', e)
-    }
+      } else {
+        // Signed out
+        setUser(null)
+        setIsMember(false)
+        membershipChecked.current = null
+      }
+    })
+
+    // Cleanup listener on unmount — THIS was the logout bug
+    return () => subscription.unsubscribe()
   }, [])
 
   const update = (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -71,7 +77,6 @@ export default function AccountPage() {
     if (!form.email || !form.password) { toast.error('Please fill all fields'); return }
     setLoading(true)
     try {
-      const supabase = getSupabase()
       if (mode === 'register') {
         const { data, error } = await supabase.auth.signUp({
           email: form.email,
@@ -82,13 +87,13 @@ export default function AccountPage() {
         toast.success('Account created! Check your email to verify.')
         if (data.user) setUser(data.user)
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({
+        const { error } = await supabase.auth.signInWithPassword({
           email: form.email,
           password: form.password,
         })
         if (error) throw error
         toast.success('Welcome back!')
-        if (data.user) setUser(data.user)
+        // onAuthStateChange will handle setting the user
       }
     } catch (error: any) {
       toast.error(error.message || 'Authentication failed')
@@ -97,7 +102,6 @@ export default function AccountPage() {
   }
 
   const handleGoogleLogin = async () => {
-    const supabase = getSupabase()
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/account` },
@@ -108,7 +112,6 @@ export default function AccountPage() {
   const handleResetPassword = async () => {
     if (!form.email.trim()) { toast.error('Enter your email address first'); return }
     setLoading(true)
-    const supabase = getSupabase()
     const { error } = await supabase.auth.resetPasswordForEmail(form.email, {
       redirectTo: `${window.location.origin}/account/reset-password`,
     })
@@ -122,9 +125,8 @@ export default function AccountPage() {
   }
 
   const handleLogout = async () => {
-    const supabase = getSupabase()
     await supabase.auth.signOut()
-    setUser(null)
+    // onAuthStateChange fires with null session and clears state automatically
     toast.success('Logged out')
   }
 
@@ -147,7 +149,6 @@ export default function AccountPage() {
       </p>
 
       <div className="card p-6 space-y-4">
-
         {mode === 'reset' && (
           <>
             {resetSent ? (
@@ -158,23 +159,13 @@ export default function AccountPage() {
               </div>
             ) : (
               <>
-                <input
-                  name="email"
-                  type="email"
-                  placeholder="Your email address"
-                  value={form.email}
-                  onChange={update}
-                  className="input-field"
-                />
+                <input name="email" type="email" placeholder="Your email address" value={form.email} onChange={update} className="input-field" />
                 <button onClick={handleResetPassword} disabled={loading} className="btn-primary w-full">
                   {loading ? 'Sending...' : 'Send Reset Link'}
                 </button>
               </>
             )}
-            <button
-              onClick={() => { setMode('login'); setResetSent(false) }}
-              className="w-full text-center text-sm text-primary hover:underline"
-            >
+            <button onClick={() => { setMode('login'); setResetSent(false) }} className="w-full text-center text-sm text-primary hover:underline">
               ← Back to Sign In
             </button>
           </>
@@ -215,10 +206,7 @@ export default function AccountPage() {
                 className="input-field"
               />
               {mode === 'login' && (
-                <button
-                  onClick={() => setMode('reset')}
-                  className="text-xs text-primary hover:underline mt-1 block ml-auto"
-                >
+                <button onClick={() => setMode('reset')} className="text-xs text-primary hover:underline mt-1 block ml-auto">
                   Forgot password?
                 </button>
               )}
@@ -230,10 +218,7 @@ export default function AccountPage() {
 
             <p className="text-center text-sm text-text-slate">
               {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-              <button
-                onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-                className="text-primary font-semibold hover:underline"
-              >
+              <button onClick={() => setMode(mode === 'login' ? 'register' : 'login')} className="text-primary font-semibold hover:underline">
                 {mode === 'login' ? 'Register' : 'Sign In'}
               </button>
             </p>
@@ -421,6 +406,7 @@ export default function AccountPage() {
                           const verifyData = await verifyRes.json()
                           if (verifyData.verified) {
                             setIsMember(true)
+                            membershipChecked.current = user.id
                             toast.success('Welcome to Real Medico+! 🎉')
                           } else {
                             toast.error('Payment verification failed')
@@ -473,7 +459,6 @@ function WishlistTab({ userId }: { userId: string }) {
 
   useEffect(() => {
     const load = async () => {
-      const supabase = getSupabase()
       const { data } = await supabase
         .from('wishlist')
         .select('*')
@@ -486,7 +471,6 @@ function WishlistTab({ userId }: { userId: string }) {
   }, [userId])
 
   const remove = async (productId: string) => {
-    const supabase = getSupabase()
     await supabase.from('wishlist').delete().eq('user_id', userId).eq('product_id', productId)
     setItems(prev => prev.filter(i => i.product_id !== productId))
     toast.success('Removed from wishlist')
