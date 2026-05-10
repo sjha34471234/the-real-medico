@@ -1,5 +1,134 @@
 /*
- * CHANGE LOG — May 10, 2026
+ * ============================================================
+ * CHANGE LOG — May 10, 2026 — FONT SELF-HOSTING
+ * ============================================================
+ *
+ * WHAT CHANGED:
+ *   Added @font-face declarations at the top of this file for
+ *   Inter and Merriweather fonts, served from /public/fonts/
+ *
+ * WHY IT CHANGED:
+ *   Even after moving fonts from @import to <link> tags in layout.tsx,
+ *   Google Fonts CDN still caused ~750ms delay on mobile because:
+ *   1. Browser must connect to fonts.googleapis.com (DNS + TCP + TLS)
+ *   2. Then fetch the CSS from googleapis.com
+ *   3. Then connect to fonts.gstatic.com for the actual font files
+ *   That is 2 extra external network round trips on every mobile load.
+ *
+ * THE FIX:
+ *   Fonts are now served from /public/fonts/ on our own Vercel domain.
+ *   Zero external network requests. Browser fetches fonts from the
+ *   same server it is already connected to.
+ *
+ * font-display: optional
+ *   Means: use system fallback font if our font is not cached yet.
+ *   Never blocks rendering. On repeat visits the cached font loads instantly.
+ *   This is the correct value for performance — NOT font-display: swap
+ *   (swap causes layout shift, optional does not)
+ *
+ * FILES NEEDED in /public/fonts/ (only these 8, delete the rest):
+ *   Inter_18pt-Light.ttf         → Inter weight 300
+ *   Inter_18pt-Regular.ttf       → Inter weight 400
+ *   Inter_24pt-Medium.ttf        → Inter weight 500
+ *   Inter_28pt-SemiBold.ttf      → Inter weight 600
+ *   Inter_28pt-Bold.ttf          → Inter weight 700
+ *   Merriweather-Regular.ttf     → Merriweather weight 400
+ *   Merriweather-Bold.ttf        → Merriweather weight 700
+ *   Merriweather_UltraBold.ttf   → Merriweather weight 900
+ *
+ * WHAT WAS REMOVED from layout.tsx:
+ *   <link rel="preconnect" href="https://fonts.googleapis.com" />
+ *   <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+ *   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?..." />
+ *
+ * RULE FOR FUTURE CLAUDE:
+ *   DO NOT add Google Fonts back via <link> or @import anywhere.
+ *   Fonts are self-hosted. If you need to add a new font weight,
+ *   download the .ttf file, put it in /public/fonts/, and add a
+ *   new @font-face block here. Never fetch from external CDN.
+ *
+ * EXPECTED RESULT:
+ *   Mobile LCP improvement of ~750ms by eliminating Google Fonts CDN hops.
+ *   Target: mobile LCP under 2.5s (was 7.4s before optimisation sessions).
+ * ============================================================
+ */
+
+/* ── Inter — weight 300 (Light) ── */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 300;
+  font-display: optional;
+  src: url('/fonts/Inter_18pt-Light.ttf') format('truetype');
+}
+
+/* ── Inter — weight 400 (Regular) ── */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: optional;
+  src: url('/fonts/Inter_18pt-Regular.ttf') format('truetype');
+}
+
+/* ── Inter — weight 500 (Medium) ── */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: optional;
+  src: url('/fonts/Inter_24pt-Medium.ttf') format('truetype');
+}
+
+/* ── Inter — weight 600 (SemiBold) ── */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: optional;
+  src: url('/fonts/Inter_28pt-SemiBold.ttf') format('truetype');
+}
+
+/* ── Inter — weight 700 (Bold) ── */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: optional;
+  src: url('/fonts/Inter_28pt-Bold.ttf') format('truetype');
+}
+
+/* ── Merriweather — weight 400 (Regular) ── */
+@font-face {
+  font-family: 'Merriweather';
+  font-style: normal;
+  font-weight: 400;
+  font-display: optional;
+  src: url('/fonts/Merriweather-Regular.ttf') format('truetype');
+}
+
+/* ── Merriweather — weight 700 (Bold) ── */
+@font-face {
+  font-family: 'Merriweather';
+  font-style: normal;
+  font-weight: 700;
+  font-display: optional;
+  src: url('/fonts/Merriweather-Bold.ttf') format('truetype');
+}
+
+/* ── Merriweather — weight 900 (UltraBold/Black) ── */
+@font-face {
+  font-family: 'Merriweather';
+  font-style: normal;
+  font-weight: 900;
+  font-display: optional;
+  src: url('/fonts/Merriweather_UltraBold.ttf') format('truetype');
+}
+
+/*
+ * ============================================================
+ * PREVIOUS CHANGE LOG — May 10, 2026 — FONTS MOVED FROM @import
+ * ============================================================
  * REMOVED: @import url('https://fonts.googleapis.com/css2?...')
  * WHY: @import in CSS is the worst way to load fonts — browser must:
  *   1. Download globals.css
@@ -7,8 +136,9 @@
  *   3. THEN start fetching Google Fonts
  *   This caused 750ms render block on mobile (confirmed in PageSpeed)
  * FIX: Fonts moved to layout.tsx <head> as <link> tags with preconnect
- *   so browser fetches fonts in parallel with CSS from the very start
- * RULE: Never add @import for Google Fonts here again. Always use layout.tsx
+ *   (then later fully self-hosted — see top of this file)
+ * RULE: Never add @import for Google Fonts here again.
+ * ============================================================
  */
 
 @tailwind base;
