@@ -94,8 +94,13 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
           </p>
           {featuredProducts.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {featuredProducts.map(product => (
-                <ProductCard key={product.id} product={product} />
+              {/* ✅ isFirstCard passed for first 2 — triggers priority loading on those images */}
+              {featuredProducts.map((product, index) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  isFirstCard={index < 2}
+                />
               ))}
             </div>
           ) : (
@@ -128,7 +133,11 @@ export default function HomeClient({ featuredProducts }: { featuredProducts: any
             Exclusive offers for healthcare workers.
           </p>
           <div className="flex flex-col sm:flex-row gap-3">
+            <label htmlFor="newsletter-email" className="sr-only">
+              Email address
+            </label>
             <input
+              id="newsletter-email"
               type="email"
               placeholder="Your email address"
               value={email}
