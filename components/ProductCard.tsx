@@ -3,11 +3,12 @@ import Link from 'next/link'
 import { ShoppingCart, Heart } from 'lucide-react'
 import useCartStore from '@/store/cartStore'
 import toast from 'react-hot-toast'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useCurrencyStore } from '@/store/currencyStore'
 
-const getSupabase = () => createClient(
+// Single instance — not recreated on every render
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
@@ -25,23 +26,37 @@ export default function ProductCard({ product }: { product: Product }) {
   const addItem = useCartStore((s) => s.addItem)
   const [wishlisted, setWishlisted] = useState(false)
   const [wishlistLoading, setWishlistLoading] = useState(false)
+  const [currentUser, setCurrentUser] = useState<any>(null)
   const { formatPrice } = useCurrencyStore()
+  const checkedFor = useRef<string | null>(null) // avoid duplicate checks
 
-  // Check if already wishlisted on mount
   useEffect(() => {
-    const check = async () => {
-      const supabase = getSupabase()
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-      const { data } = await supabase
-        .from('wishlist')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('product_id', product.id)
-        .single()
-      if (data) setWishlisted(true)
-    }
-    check()
+    // Listen for auth state — fires immediately with current session
+    // AND fires again after Google OAuth redirect completes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const user = session?.user ?? null
+        setCurrentUser(user)
+
+        if (user && checkedFor.current !== `${user.id}-${product.id}`) {
+          checkedFor.current = `${user.id}-${product.id}`
+          const { data } = await supabase
+            .from('wishlist')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('product_id', product.id)
+            .single()
+          setWishlisted(!!data)
+        }
+
+        if (!user) {
+          setWishlisted(false)
+          checkedFor.current = null
+        }
+      }
+    )
+
+    return () => subscription.unsubscribe()
   }, [product.id])
 
   const handleAddToCart = () => {
@@ -60,40 +75,42 @@ export default function ProductCard({ product }: { product: Product }) {
 
   const handleWishlist = async () => {
     if (wishlistLoading) return
-    setWishlistLoading(true)
 
-    const supabase = getSupabase()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    if (!user) {
+    if (!currentUser) {
       toast.error('Please log in to save to wishlist')
-      setWishlistLoading(false)
       return
     }
 
+    setWishlistLoading(true)
+
     if (wishlisted) {
-      await supabase
+      const { error } = await supabase
         .from('wishlist')
         .delete()
-        .eq('user_id', user.id)
+        .eq('user_id', currentUser.id)
         .eq('product_id', product.id)
-      setWishlisted(false)
-      toast('Removed from wishlist', { icon: '💔' })
+      if (!error) {
+        setWishlisted(false)
+        toast('Removed from wishlist', { icon: '💔' })
+      } else {
+        toast.error('Could not remove from wishlist')
+      }
     } else {
       const { error } = await supabase.from('wishlist').insert({
-        user_id: user.id,
+        user_id: currentUser.id,
         product_id: product.id,
         product_title: product.title,
         product_image: product.image,
         product_price: product.price,
       })
-      if (error) {
-        toast.error('Could not save to wishlist')
-      } else {
+      if (!error) {
         setWishlisted(true)
         toast.success('Added to wishlist! ❤️')
+      } else {
+        toast.error('Could not save to wishlist')
       }
     }
+
     setWishlistLoading(false)
   }
 
