@@ -1,55 +1,53 @@
 /*
  * ============================================================
- * CHANGE LOG — May 10, 2026 — FONT SELF-HOSTING
+ * FILE: app/globals.css
+ * PURPOSE: Global styles + self-hosted font declarations
+ * LAST CHANGED: May 11, 2026
+ * WHY IT EXISTS: Central place for @font-face and Tailwind directives
+ * DEPENDENCIES: /public/fonts/ (8 x .woff2 + 8 x .ttf fallback files)
+ * ⚠️ DO NOT CHANGE:
+ *   - font-display: optional (not swap — swap causes layout shift)
+ *   - @font-face must stay ABOVE @tailwind directives
+ *   - Never add @import or <link> for Google Fonts anywhere
  * ============================================================
- *
+ */
+
+/*
+ * ============================================================
+ * CHANGE LOG — May 11, 2026 — WOFF2 FORMAT UPGRADE
+ * ============================================================
  * WHAT CHANGED:
- *   Added @font-face declarations at the top of this file for
- *   Inter and Merriweather fonts, served from /public/fonts/
+ *   All @font-face src now use .woff2 as primary format,
+ *   with .ttf as fallback for very old browsers.
  *
  * WHY IT CHANGED:
- *   Even after moving fonts from @import to <link> tags in layout.tsx,
- *   Google Fonts CDN still caused ~750ms delay on mobile because:
- *   1. Browser must connect to fonts.googleapis.com (DNS + TCP + TLS)
- *   2. Then fetch the CSS from googleapis.com
- *   3. Then connect to fonts.gstatic.com for the actual font files
- *   That is 2 extra external network round trips on every mobile load.
+ *   TTF files were 163–168 KiB each (732 KiB total for Inter alone).
+ *   WOFF2 is typically 30–50% smaller than TTF at identical quality.
+ *   PageSpeed mobile showed fonts taking 493–681ms to download on slow 4G.
+ *   Switching to WOFF2 reduces that payload significantly.
  *
- * THE FIX:
- *   Fonts are now served from /public/fonts/ on our own Vercel domain.
- *   Zero external network requests. Browser fetches fonts from the
- *   same server it is already connected to.
+ * WOFF2 vs TTF:
+ *   WOFF2 uses Brotli compression internally — smallest web font format.
+ *   All modern browsers support WOFF2 (99%+ global coverage).
+ *   TTF kept as fallback for browsers that don't support WOFF2 (basically none).
  *
- * font-display: optional
- *   Means: use system fallback font if our font is not cached yet.
- *   Never blocks rendering. On repeat visits the cached font loads instantly.
- *   This is the correct value for performance — NOT font-display: swap
- *   (swap causes layout shift, optional does not)
+ * FORMAT ORDER: woff2 first, truetype second.
+ *   Browser picks the first format it supports — always picks woff2.
  *
- * FILES NEEDED in /public/fonts/ (only these 8, delete the rest):
- *   Inter_18pt-Light.ttf         → Inter weight 300
- *   Inter_18pt-Regular.ttf       → Inter weight 400
- *   Inter_24pt-Medium.ttf        → Inter weight 500
- *   Inter_28pt-SemiBold.ttf      → Inter weight 600
- *   Inter_28pt-Bold.ttf          → Inter weight 700
- *   Merriweather-Regular.ttf     → Merriweather weight 400
- *   Merriweather-Bold.ttf        → Merriweather weight 700
- *   Merriweather_UltraBold.ttf   → Merriweather weight 900
+ * FILES REQUIRED in /public/fonts/:
+ *   Inter_18pt-Light.woff2        Inter_18pt-Light.ttf
+ *   Inter_18pt-Regular.woff2      Inter_18pt-Regular.ttf
+ *   Inter_24pt-Medium.woff2       Inter_24pt-Medium.ttf
+ *   Inter_28pt-SemiBold.woff2     Inter_28pt-SemiBold.ttf
+ *   Inter_28pt-Bold.woff2         Inter_28pt-Bold.ttf
+ *   Merriweather-Regular.woff2    Merriweather-Regular.ttf
+ *   Merriweather-Bold.woff2       Merriweather-Bold.ttf
+ *   Merriweather_UltraBold.woff2  Merriweather_UltraBold.ttf
  *
- * WHAT WAS REMOVED from layout.tsx:
- *   <link rel="preconnect" href="https://fonts.googleapis.com" />
- *   <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
- *   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?..." />
- *
- * RULE FOR FUTURE CLAUDE:
- *   DO NOT add Google Fonts back via <link> or @import anywhere.
- *   Fonts are self-hosted. If you need to add a new font weight,
- *   download the .ttf file, put it in /public/fonts/, and add a
- *   new @font-face block here. Never fetch from external CDN.
- *
- * EXPECTED RESULT:
- *   Mobile LCP improvement of ~750ms by eliminating Google Fonts CDN hops.
- *   Target: mobile LCP under 2.5s (was 7.4s before optimisation sessions).
+ * NOTE ON Merriweather UltraBold filename:
+ *   GitHub shows "Merriweather UltraBold" (with space) for the TTF.
+ *   Filename in URL must use underscore: Merriweather_UltraBold.woff2
+ *   Verify your uploaded filenames match exactly.
  * ============================================================
  */
 
@@ -59,7 +57,8 @@
   font-style: normal;
   font-weight: 300;
   font-display: optional;
-  src: url('/fonts/Inter_18pt-Light.ttf') format('truetype');
+  src: url('/fonts/Inter_18pt-Light.woff2') format('woff2'),
+       url('/fonts/Inter_18pt-Light.ttf') format('truetype');
 }
 
 /* ── Inter — weight 400 (Regular) ── */
@@ -68,7 +67,8 @@
   font-style: normal;
   font-weight: 400;
   font-display: optional;
-  src: url('/fonts/Inter_18pt-Regular.ttf') format('truetype');
+  src: url('/fonts/Inter_18pt-Regular.woff2') format('woff2'),
+       url('/fonts/Inter_18pt-Regular.ttf') format('truetype');
 }
 
 /* ── Inter — weight 500 (Medium) ── */
@@ -77,7 +77,8 @@
   font-style: normal;
   font-weight: 500;
   font-display: optional;
-  src: url('/fonts/Inter_24pt-Medium.ttf') format('truetype');
+  src: url('/fonts/Inter_24pt-Medium.woff2') format('woff2'),
+       url('/fonts/Inter_24pt-Medium.ttf') format('truetype');
 }
 
 /* ── Inter — weight 600 (SemiBold) ── */
@@ -86,7 +87,8 @@
   font-style: normal;
   font-weight: 600;
   font-display: optional;
-  src: url('/fonts/Inter_28pt-SemiBold.ttf') format('truetype');
+  src: url('/fonts/Inter_28pt-SemiBold.woff2') format('woff2'),
+       url('/fonts/Inter_28pt-SemiBold.ttf') format('truetype');
 }
 
 /* ── Inter — weight 700 (Bold) ── */
@@ -95,7 +97,8 @@
   font-style: normal;
   font-weight: 700;
   font-display: optional;
-  src: url('/fonts/Inter_28pt-Bold.ttf') format('truetype');
+  src: url('/fonts/Inter_28pt-Bold.woff2') format('woff2'),
+       url('/fonts/Inter_28pt-Bold.ttf') format('truetype');
 }
 
 /* ── Merriweather — weight 400 (Regular) ── */
@@ -104,7 +107,8 @@
   font-style: normal;
   font-weight: 400;
   font-display: optional;
-  src: url('/fonts/Merriweather-Regular.ttf') format('truetype');
+  src: url('/fonts/Merriweather-Regular.woff2') format('woff2'),
+       url('/fonts/Merriweather-Regular.ttf') format('truetype');
 }
 
 /* ── Merriweather — weight 700 (Bold) ── */
@@ -113,7 +117,8 @@
   font-style: normal;
   font-weight: 700;
   font-display: optional;
-  src: url('/fonts/Merriweather-Bold.ttf') format('truetype');
+  src: url('/fonts/Merriweather-Bold.woff2') format('woff2'),
+       url('/fonts/Merriweather-Bold.ttf') format('truetype');
 }
 
 /* ── Merriweather — weight 900 (UltraBold/Black) ── */
@@ -122,22 +127,18 @@
   font-style: normal;
   font-weight: 900;
   font-display: optional;
-  src: url('/fonts/Merriweather_UltraBold.ttf') format('truetype');
+  src: url('/fonts/Merriweather%20UltraBold.woff2') format('woff2'),
+       url('/fonts/Merriweather%20UltraBold.ttf') format('truetype');
 }
 
 /*
  * ============================================================
- * PREVIOUS CHANGE LOG — May 10, 2026 — FONTS MOVED FROM @import
+ * PREVIOUS CHANGE LOG — May 10, 2026 — FONT SELF-HOSTING
  * ============================================================
- * REMOVED: @import url('https://fonts.googleapis.com/css2?...')
- * WHY: @import in CSS is the worst way to load fonts — browser must:
- *   1. Download globals.css
- *   2. Parse it, find the @import
- *   3. THEN start fetching Google Fonts
- *   This caused 750ms render block on mobile (confirmed in PageSpeed)
- * FIX: Fonts moved to layout.tsx <head> as <link> tags with preconnect
- *   (then later fully self-hosted — see top of this file)
- * RULE: Never add @import for Google Fonts here again.
+ * REMOVED: Google Fonts CDN (@import and <link> tags)
+ * WHY: External font CDN caused ~750ms render delay on mobile.
+ * FIX: Fonts self-hosted in /public/fonts/ — zero external requests.
+ * font-display: optional — never blocks render, no layout shift.
  * ============================================================
  */
 
@@ -149,24 +150,30 @@
   body {
     @apply font-body text-text-dark bg-white;
   }
+
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading;
   }
 }
 
 @layer components {
+
   .btn-primary {
     @apply bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary-dark transition-all duration-200 disabled:opacity-50;
   }
+
   .btn-secondary {
     @apply border-2 border-primary text-primary px-6 py-3 rounded-lg font-semibold hover:bg-accent transition-all duration-200;
   }
+
   .card {
     @apply bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden;
   }
+
   .input-field {
     @apply w-full border border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
   }
+
 }
 
 /* Prevent horizontal scroll on mobile */
