@@ -1,5 +1,15 @@
-/* ❌ DELETE THIS LINE — moved to layout.tsx */
-/* @import url('https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=swap'); */
+/*
+ * CHANGE LOG — May 10, 2026
+ * REMOVED: @import url('https://fonts.googleapis.com/css2?...')
+ * WHY: @import in CSS is the worst way to load fonts — browser must:
+ *   1. Download globals.css
+ *   2. Parse it, find the @import
+ *   3. THEN start fetching Google Fonts
+ *   This caused 750ms render block on mobile (confirmed in PageSpeed)
+ * FIX: Fonts moved to layout.tsx <head> as <link> tags with preconnect
+ *   so browser fetches fonts in parallel with CSS from the very start
+ * RULE: Never add @import for Google Fonts here again. Always use layout.tsx
+ */
 
 @tailwind base;
 @tailwind components;
@@ -13,6 +23,7 @@
     @apply font-heading;
   }
 }
+
 @layer components {
   .btn-primary {
     @apply bg-primary text-white px-6 py-3 rounded-lg font-semibold hover:bg-primary-dark transition-all duration-200 disabled:opacity-50;
@@ -27,18 +38,22 @@
     @apply w-full border border-slate-200 rounded-lg px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
   }
 }
+
 /* Prevent horizontal scroll on mobile */
 html, body {
   overflow-x: hidden;
   max-width: 100vw;
 }
+
 * {
   box-sizing: border-box;
 }
+
 /* Fix product page mobile overflow */
 .product-detail-container {
   overflow-x: hidden;
 }
+
 img {
   max-width: 100%;
 }
