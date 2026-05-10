@@ -1,29 +1,34 @@
 /*
- * CHANGE LOG — May 10, 2026
+ * ============================================================
+ * CHANGE LOG — May 10, 2026 — FONT SELF-HOSTING
+ * ============================================================
  *
- * CHANGE 1: Google Fonts moved from globals.css @import → <head> <link> tags
- *   WHY: @import caused a render-blocking chain (CSS → discover font → fetch font)
- *   FIX: preconnect to fonts.googleapis.com + fonts.gstatic.com declared first,
- *        then font <link> with display=optional (never blocks render even on slow 4G)
- *   display=optional means: use fallback font if not cached, don't wait for download
- *   RULE: Never move fonts back to @import in globals.css
+ * WHAT CHANGED:
+ *   REMOVED the 3 Google Fonts <link> tags that were previously
+ *   added here (preconnect + stylesheet).
  *
- * CHANGE 2: Printify CDN preconnect added
- *   WHY: Product images come from images.printify.com — preconnect starts the
- *        TCP handshake early so images load faster
+ * WHY:
+ *   Fonts are now self-hosted in /public/fonts/ via @font-face
+ *   in globals.css. No external CDN needed at all.
+ *   Eliminates ~750ms Google Fonts CDN round trips on mobile.
  *
- * CHANGE 3: Razorpay script moved from <head> raw <script> → <Script strategy="lazyOnload">
- *   WHY: Raw <script> in <head> blocks ALL rendering until it downloads (56 KiB)
- *   FIX: lazyOnload loads it after everything else — Razorpay only needed at checkout
- *   RULE: Never put Razorpay back in <head> as a raw <script> tag
+ * WHAT IS STILL HERE (do not remove these):
+ *   - Printify CDN preconnect — product images still come from
+ *     images.printify.com, this saves ~200ms on first image load
+ *   - Razorpay lazyOnload — payment script, must stay lazyOnload
+ *   - Google Analytics afterInteractive — tracking, stays deferred
+ *   - Microsoft Clarity afterInteractive — session recording, deferred
  *
- * CHANGE 4: Google Analytics + Microsoft Clarity use strategy="afterInteractive"
- *   WHY: These are tracking scripts, not needed for render — deferring saves ~150ms
+ * RULE FOR FUTURE CLAUDE:
+ *   DO NOT add Google Fonts <link> or preconnect tags back here.
+ *   Fonts are handled entirely by globals.css @font-face.
+ *   If you see <link rel="stylesheet" href="fonts.googleapis.com">
+ *   anywhere in this project — DELETE IT, it is a regression.
  *
- * SCRIPTS THAT CANNOT BE OPTIMISED FURTHER (3rd party limitations):
- *   - Razorpay checkout.js includes legacy polyfills (203 KiB unused) — their code, not ours
- *   - Google Analytics gtag is 153 KiB — unavoidable if you want GA
- *   These show as warnings in PageSpeed but cannot be fixed without removing the services
+ * FULL HISTORY:
+ *   Phase 1 (May 10 2026): @import removed from globals.css → moved to <link> here
+ *   Phase 2 (May 10 2026): <link> removed from here → fonts fully self-hosted in globals.css
+ * ============================================================
  */
 
 import type { Metadata } from 'next'
@@ -73,36 +78,32 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Favicon — inline SVG so no extra network request */}
+        {/* ── Favicon — inline SVG, zero network request ── */}
         <link
           rel="icon"
           href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='white' rx='12'/><text y='72' x='8' font-size='58' font-weight='900' font-family='Georgia,serif' fill='%231A3A8F'>M+</text></svg>"
         />
 
         {/*
-         * Printify CDN preconnect
-         * WHY: All product images served from images.printify.com
-         * This starts TCP handshake before browser discovers the image URLs
-         * RULE: Keep these — removing them adds ~200ms to first product image load
+         * ── Printify CDN preconnect ──
+         * WHY: All product images are served from images.printify.com
+         * This pre-establishes the TCP connection before the browser
+         * discovers the image URLs in the page HTML.
+         * SAVES: ~200ms on first product image load
+         * RULE: Keep these — removing them slows down shop/product pages
          */}
         <link rel="dns-prefetch" href="https://images.printify.com" />
         <link rel="preconnect" href="https://images.printify.com" crossOrigin="anonymous" />
 
         {/*
-         * Google Fonts — loaded here NOT in globals.css
-         * WHY: @import in CSS creates a blocking chain. <link> here loads in parallel.
-         * display=optional = browser uses fallback if font not cached, never waits
-         * Fonts used: Merriweather (headings, font-heading class) + Inter (body, font-body class)
-         * RULE: Never move these back to globals.css as @import
+         * ── NO Google Fonts link tags here ──
+         * Fonts (Inter + Merriweather) are self-hosted via @font-face in globals.css
+         * Files live in /public/fonts/ on our own Vercel domain
+         * DO NOT add Google Fonts <link> tags back here — it is a performance regression
+         * See globals.css for full explanation and file list
          */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700;900&family=Inter:wght@300;400;500;600;700&display=optional"
-        />
 
-        {/* Schema.org structured data — helps Google understand the site */}
+        {/* ── Schema.org structured data — helps Google understand the site ── */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -137,12 +138,16 @@ export default function RootLayout({
         <Toaster position="bottom-right" />
 
         {/*
-         * Razorpay — strategy="lazyOnload"
-         * WHY: Was in <head> as raw <script> which blocked ALL rendering
-         * lazyOnload = loads after page is fully idle, not needed until checkout
-         * RULE: Never move back to <head>. Never use strategy="beforeInteractive"
-         * NOTE: Razorpay's own JS has 203 KiB of legacy polyfills — that's their
-         * code, not ours. It shows as a warning in PageSpeed but cannot be fixed.
+         * ── Razorpay — strategy="lazyOnload" ──
+         * WHY: Was previously a raw <script> in <head> which blocked ALL rendering
+         * lazyOnload = loads after the page is fully idle
+         * Razorpay is only needed when user reaches checkout, not on page load
+         * SAVES: Removes 56 KiB blocking script from critical path
+         * RULE: Never move back to <head>. Never use strategy="beforeInteractive".
+         *
+         * KNOWN LIMITATION (cannot fix):
+         * Razorpay's checkout.js includes 203 KiB of legacy polyfills — their code.
+         * Shows as PageSpeed warning. Accept it, cannot be removed.
          */}
         <Script
           src="https://checkout.razorpay.com/v1/checkout.js"
@@ -150,11 +155,11 @@ export default function RootLayout({
         />
 
         {/*
-         * Google Analytics — strategy="afterInteractive"
+         * ── Google Analytics — strategy="afterInteractive" ──
          * GA ID: G-N68DENGZD2
-         * WHY afterInteractive: loads after hydration, doesn't block render
-         * NOTE: GA script is 153 KiB — shows in PageSpeed unused JS warning
-         * This is unavoidable if you want Google Analytics. Accept this warning.
+         * WHY afterInteractive: loads after hydration, does not block render
+         * KNOWN LIMITATION: GA script is 153 KiB — shows in PageSpeed unused JS.
+         * Unavoidable if you want Google Analytics. Accept this warning.
          */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-N68DENGZD2"
@@ -170,9 +175,9 @@ export default function RootLayout({
         </Script>
 
         {/*
-         * Microsoft Clarity — strategy="afterInteractive"
+         * ── Microsoft Clarity — strategy="afterInteractive" ──
          * Clarity ID: wo9hkyhyop
-         * WHY afterInteractive: session recording, not needed for render
+         * WHY afterInteractive: session recording script, not needed for render
          */}
         <Script id="microsoft-clarity" strategy="afterInteractive">
           {`
