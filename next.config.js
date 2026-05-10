@@ -2,14 +2,25 @@
 const nextConfig = {
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: 'images.printify.com' },
-      { protocol: 'https', hostname: 'storage.googleapis.com' },
-      { protocol: 'https', hostname: 'cdn.printify.com' },
-      { protocol: 'https', hostname: 'via.placeholder.com' },
+      {
+        // ✅ Printify CDN — allows next/image to optimize these
+        protocol: 'https',
+        hostname: 'images.printify.com',
+      },
+      {
+        // ✅ Covers any other Printify CDN subdomains
+        protocol: 'https',
+        hostname: '**.printify.com',
+      },
+      {
+        // ✅ Placeholder fallback image used in getFeaturedProducts
+        protocol: 'https',
+        hostname: 'via.placeholder.com',
+      },
     ],
+    // ✅ Serve AVIF first, then WebP — 50-70% smaller than JPEG on mobile
+    formats: ['image/avif', 'image/webp'],
   },
-  // Suppress hydration warnings from browser extensions
-  reactStrictMode: false,
 }
 
 module.exports = nextConfig
