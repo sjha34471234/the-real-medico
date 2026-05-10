@@ -1,9 +1,9 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import toast from 'react-hot-toast'
 
-const getSupabase = () => createClient(
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
@@ -20,50 +20,72 @@ interface Props {
 export default function WishlistButton({ product }: Props) {
   const [wishlisted, setWishlisted] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [currentUser, setCurrentUser] = useState<any>(null)
+  const checkedFor = useRef<string | null>(null)
 
   useEffect(() => {
-    const check = async () => {
-      const supabase = getSupabase()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
-      const { data } = await supabase
-        .from('wishlist')
-        .select('id')
-        .eq('user_id', session.user.id)
-        .eq('product_id', product.id)
-        .single()
-      if (data) setWishlisted(true)
-    }
-    check()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const user = session?.user ?? null
+        setCurrentUser(user)
+
+        if (user && checkedFor.current !== `${user.id}-${product.id}`) {
+          checkedFor.current = `${user.id}-${product.id}`
+          const { data } = await supabase
+            .from('wishlist')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('product_id', product.id)
+            .single()
+          setWishlisted(!!data)
+        }
+
+        if (!user) {
+          setWishlisted(false)
+          checkedFor.current = null
+        }
+      }
+    )
+
+    return () => subscription.unsubscribe()
   }, [product.id])
 
   const toggle = async () => {
-    const supabase = getSupabase()
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) {
+    if (!currentUser) {
       toast.error('Please sign in to save to wishlist')
       return
     }
+
     setLoading(true)
+
     if (wishlisted) {
-      await supabase
+      const { error } = await supabase
         .from('wishlist')
         .delete()
-        .eq('user_id', session.user.id)
+        .eq('user_id', currentUser.id)
         .eq('product_id', product.id)
-      setWishlisted(false)
-      toast.success('Removed from wishlist')
+      if (!error) {
+        setWishlisted(false)
+        toast('Removed from wishlist', { icon: '💔' })
+      } else {
+        toast.error('Could not remove from wishlist')
+      }
     } else {
-      await supabase.from('wishlist').insert({
-        user_id: session.user.id,
+      const { error } = await supabase.from('wishlist').insert({
+        user_id: currentUser.id,
         product_id: product.id,
         product_title: product.title,
         product_image: product.image,
         product_price: product.price,
       })
-      setWishlisted(true)
-      toast.success('Added to wishlist ❤️')
+      if (!error) {
+        setWishlisted(true)
+        toast.success('Added to wishlist ❤️')
+      } else {
+        toast.error('Could not save to wishlist')
+      }
     }
+
     setLoading(false)
   }
 
@@ -71,12 +93,12 @@ export default function WishlistButton({ product }: Props) {
     <button
       onClick={toggle}
       disabled={loading}
+      aria-label={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
       className={`p-3 rounded-xl border-2 transition-all ${
         wishlisted
           ? 'bg-red-50 border-red-200 text-red-500'
           : 'bg-white border-slate-200 text-slate-400 hover:border-red-200 hover:text-red-400'
       }`}
-      title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
     >
       {wishlisted ? '❤️' : '🤍'}
     </button>
