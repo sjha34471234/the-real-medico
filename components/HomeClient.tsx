@@ -4,7 +4,13 @@ import { useState } from 'react'
 import ProductCard from './ProductCard'
 import toast from 'react-hot-toast'
 
-export default function HomeClient({ featuredProducts }: { featuredProducts: any[] }) {
+export default function HomeClient({
+  featuredProducts,
+  firstImage,
+}: {
+  featuredProducts: any[]
+  firstImage?: string | null
+}) {
   const [email, setEmail] = useState('')
   const [subscribing, setSubscribing] = useState(false)
 
