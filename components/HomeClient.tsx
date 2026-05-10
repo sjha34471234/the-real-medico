@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import ProductCard from './ProductCard'
 import toast from 'react-hot-toast'
 
@@ -13,6 +13,20 @@ export default function HomeClient({
 }) {
   const [email, setEmail] = useState('')
   const [subscribing, setSubscribing] = useState(false)
+
+  // ✅ Injects preload link into <head> so browser fetches LCP image immediately
+  useEffect(() => {
+    if (!firstImage) return
+    const link = document.createElement('link')
+    link.rel = 'preload'
+    link.as = 'image'
+    link.href = firstImage
+    link.setAttribute('fetchpriority', 'high')
+    document.head.appendChild(link)
+    return () => {
+      document.head.removeChild(link)
+    }
+  }, [firstImage])
 
   const handleSubscribe = async () => {
     if (!email.trim()) {
@@ -100,7 +114,6 @@ export default function HomeClient({
           </p>
           {featuredProducts.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* ✅ isFirstCard passed for first 2 — triggers priority loading on those images */}
               {featuredProducts.map((product, index) => (
                 <ProductCard
                   key={product.id}
