@@ -1,5 +1,6 @@
 'use client'
 import Link from 'next/link'
+import Image from 'next/image'
 import { ShoppingCart, Heart } from 'lucide-react'
 import useCartStore from '@/store/cartStore'
 import toast from 'react-hot-toast'
@@ -22,17 +23,21 @@ interface Product {
   description: string
 }
 
-export default function ProductCard({ product }: { product: Product }) {
+export default function ProductCard({
+  product,
+  isFirstCard = false,
+}: {
+  product: Product
+  isFirstCard?: boolean
+}) {
   const addItem = useCartStore((s) => s.addItem)
   const [wishlisted, setWishlisted] = useState(false)
   const [wishlistLoading, setWishlistLoading] = useState(false)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const { formatPrice } = useCurrencyStore()
-  const checkedFor = useRef<string | null>(null) // avoid duplicate checks
+  const checkedFor = useRef<string | null>(null)
 
   useEffect(() => {
-    // Listen for auth state — fires immediately with current session
-    // AND fires again after Google OAuth redirect completes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const user = session?.user ?? null
@@ -118,12 +123,18 @@ export default function ProductCard({ product }: { product: Product }) {
     <div className="card group hover:shadow-md transition-all duration-300">
       <div className="relative overflow-hidden">
 
+        {/* ✅ next/image replaces <img> — auto WebP/AVIF + correct sizing for mobile */}
         <Link href={`/shop/${product.id}`}>
-          <img
-            src={product.image}
-            alt={product.title}
-            className="w-full h-56 object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
-          />
+          <div className="relative w-full h-56">
+            <Image
+              src={product.image}
+              alt={product.title}
+              fill
+              sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+              priority={isFirstCard}
+              className="object-cover group-hover:scale-105 transition-transform duration-300 cursor-pointer"
+            />
+          </div>
         </Link>
 
         <button
