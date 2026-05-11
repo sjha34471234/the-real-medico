@@ -1,5 +1,32 @@
+// ============================================================
+// FILE: components/ProductDetailClient.tsx
+// PURPOSE: Client-side product detail page — image gallery, variant selector, add to cart
+// LAST CHANGED: May 11, 2026
+// WHY IT EXISTS: Renders product detail UI with state (selected variant, quantity, active image)
+// DEPENDENCIES: cartStore, currencyStore, WishlistButton, ReviewSection
+// ⚠️ DO NOT CHANGE:
+//   - next/image MUST be used for ALL images (main + thumbnails) — raw <img> caused 17.3s LCP
+//   - Main image: fill + sizes="(max-width: 768px) 100vw, 50vw" — matches the md:grid 50% column
+//   - Thumbnails: fill + sizes="80px" — fixed size, matches w-20 h-20 display
+//   - Main image wrapper MUST have position:relative + explicit height — required for fill mode
+//   - DO NOT add unoptimized prop — that disables Next.js optimization entirely
+//   - Printify images from images-api.printify.com — already in next.config.js remotePatterns
+// ============================================================
+
+// --- CHANGE LOG ---
+// [May 11, 2026] CHANGED: Replaced all raw <img> tags with next/image
+// REASON: Raw <img> tags bypassed Next.js image optimization entirely
+// WHAT BROKE BEFORE: Printify serving 1200×1200px raw JPEGs (833 KiB each) with no cache TTL
+//   → Mobile LCP 17.3s, Performance score 58
+// OLD CODE WAS: <img src={mainImage} ...> and <img src={img} ...> in thumbnail map
+// HOW THIS FIXES IT: next/image auto-converts to WebP/AVIF, resizes to displayed dimensions,
+//   adds proper cache headers, and lazy-loads thumbnails while priority-loading the main image
+// EXPECTED RESULT: Mobile LCP should drop from 17.3s to ~2-3s, score 58 → ~80+
+// --- END CHANGE LOG ---
+
 'use client'
 import { useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import useCartStore from '@/store/cartStore'
 import toast from 'react-hot-toast'
@@ -39,21 +66,38 @@ export default function ProductDetailClient({ product }: { product: any }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
         {/* Images */}
         <div className="space-y-3">
-          <img
-            src={mainImage}
-            alt={product.title}
-            className="w-full h-96 object-cover rounded-2xl border border-slate-100"
-          />
+
+          {/* [May 11, 2026] REASON: position:relative + explicit height required for next/image fill mode */}
+          <div className="relative w-full h-96 rounded-2xl overflow-hidden border border-slate-100">
+            <Image
+              src={mainImage}
+              alt={product.title}
+              fill
+              priority
+              sizes="(max-width: 768px) 100vw, 50vw"
+              className="object-cover"
+            />
+          </div>
+
           {product.images?.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               {product.images.slice(0, 6).map((img: string, i: number) => (
-                <img
+                // [May 11, 2026] REASON: Wrapped in relative div — next/image fill requires positioned parent
+                <div
                   key={i}
-                  src={img}
-                  alt={`view ${i + 1}`}
                   onClick={() => setMainImage(img)}
-                  className={`w-20 h-20 object-cover rounded-lg flex-shrink-0 cursor-pointer border-2 transition-all ${mainImage === img ? 'border-primary' : 'border-transparent hover:border-primary'}`}
-                />
+                  className={`relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden cursor-pointer border-2 transition-all ${
+                    mainImage === img ? 'border-primary' : 'border-transparent hover:border-primary'
+                  }`}
+                >
+                  <Image
+                    src={img}
+                    alt={`view ${i + 1}`}
+                    fill
+                    sizes="80px"
+                    className="object-cover rounded-lg"
+                  />
+                </div>
               ))}
             </div>
           )}
