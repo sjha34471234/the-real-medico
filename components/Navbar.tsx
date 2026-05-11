@@ -1,9 +1,16 @@
 'use client'
+// ============================================================
+// FILE: components/Navbar.tsx
+// PURPOSE: Store navigation bar
+// LAST CHANGED: May 11, 2026
+// WHY IT EXISTS: Main store nav
+// ⚠️ DO NOT CHANGE: usePathname admin check — prevents navbar showing on admin pages
+// ============================================================
 import CurrencySelector from '@/components/CurrencySelector';
 import { useCurrencyStore } from '@/store/currencyStore';
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { ShoppingCart, Menu, X, User, Search } from 'lucide-react'
 import useCartStore from '@/store/cartStore'
 
@@ -88,6 +95,7 @@ function SearchButton() {
 }
 
 export default function Navbar() {
+  const pathname = usePathname()
   const [menuOpen, setMenuOpen] = useState(false)
   const cartCount = useCartStore((s) => s.items.reduce((a, i) => a + i.quantity, 0))
   const { initCurrency } = useCurrencyStore()
@@ -95,6 +103,10 @@ export default function Navbar() {
   useEffect(() => {
     initCurrency()
   }, [])
+
+  // [May 11, 2026] REASON: Admin has its own sidebar layout — store navbar must not render
+  // Using usePathname (client-side) is 100% reliable on every domain including Vercel previews
+  if (pathname?.startsWith('/admin')) return null
 
   return (
     <nav className="sticky top-0 z-40 bg-white border-b border-slate-100 shadow-sm">
@@ -128,13 +140,9 @@ export default function Navbar() {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
-          {/* Currency Selector */}
           <CurrencySelector variant="navbar" />
-
-          {/* Search */}
           <SearchButton />
 
-          {/* Cart */}
           <Link
             href="/cart"
             className="relative p-2 hover:bg-accent rounded-lg transition-colors"
@@ -148,7 +156,6 @@ export default function Navbar() {
             )}
           </Link>
 
-          {/* Account */}
           <Link
             href="/account"
             className="hidden md:flex items-center gap-2 btn-primary text-sm py-2 px-4"
@@ -158,7 +165,6 @@ export default function Navbar() {
             Account
           </Link>
 
-          {/* Mobile menu button */}
           <button
             className="md:hidden p-2 hover:bg-accent rounded-lg transition-colors"
             onClick={() => setMenuOpen(!menuOpen)}
@@ -191,7 +197,6 @@ export default function Navbar() {
             </Link>
           ))}
           <div className="border-t border-slate-100 mt-2 pt-2">
-            {/* Currency selector in mobile menu */}
             <div className="flex items-center justify-between px-3 py-3">
               <span className="font-medium text-text-dark">Currency</span>
               <CurrencySelector variant="navbar" />
