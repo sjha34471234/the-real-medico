@@ -1,15 +1,13 @@
 // ============================================================
 // FILE: app/admin/layout.tsx
-// PURPOSE: Admin dashboard shell — sidebar nav, logout button
+// PURPOSE: Admin dashboard shell — sidebar nav, instant logout
 // LAST CHANGED: May 11, 2026
 // WHY IT EXISTS: Shared layout for all admin/* pages
-// DEPENDENCIES: /api/admin/logout, /api/admin/verify
-// ⚠️ DO NOT CHANGE: Auth check on mount — removes stale sessions
+// ⚠️ DO NOT CHANGE: window.location.href for logout — guarantees cookie cleared
 // ============================================================
 
 'use client'
-import { useState, useEffect } from 'react'
-import { useRouter, usePathname } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import Link from 'next/link'
 import {
   LayoutDashboard,
@@ -23,6 +21,7 @@ import {
   X,
   Settings,
 } from 'lucide-react'
+import { useState } from 'react'
 
 const NAV_ITEMS = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
@@ -35,22 +34,14 @@ const NAV_ITEMS = [
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter()
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [loggingOut, setLoggingOut] = useState(false)
 
-  // Verify session on mount
-  useEffect(() => {
-    fetch('/api/admin/verify').then(res => {
-      if (!res.ok) router.push('/admin/login')
-    })
-  }, [router])
-
+  // [May 11] REASON: window.location.href for logout — hard redirect ensures
+  // cookie is cleared and browser doesn't cache the admin page
   const handleLogout = async () => {
-    setLoggingOut(true)
     await fetch('/api/admin/logout', { method: 'POST' })
-    router.push('/admin/login')
+    window.location.href = '/admin/login'
   }
 
   const isActive = (item: typeof NAV_ITEMS[0]) => {
@@ -58,9 +49,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return pathname.startsWith(item.href)
   }
 
-  const Sidebar = () => (
+  const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      {/* Brand */}
       <div className="p-6 border-b border-slate-200">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center flex-shrink-0">
@@ -73,7 +63,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         </div>
       </div>
 
-      {/* Nav */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map(item => {
           const Icon = item.icon
@@ -96,16 +85,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         })}
       </nav>
 
-      {/* Logout */}
       <div className="p-4 border-t border-slate-200">
         <button
           onClick={handleLogout}
-          disabled={loggingOut}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-500 hover:bg-red-50 w-full transition-all"
           aria-label="Logout from admin dashboard"
         >
           <LogOut className="w-4 h-4" />
-          {loggingOut ? 'Logging out...' : 'Logout'}
+          Logout
         </button>
       </div>
     </div>
@@ -115,7 +102,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <div className="min-h-screen bg-accent flex">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-64 bg-white border-r border-slate-200 fixed top-0 left-0 h-full z-40">
-        <Sidebar />
+        <SidebarContent />
       </aside>
 
       {/* Mobile Sidebar Overlay */}
@@ -139,7 +126,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <X className="w-5 h-5" />
           </button>
         </div>
-        <Sidebar />
+        <SidebarContent />
       </aside>
 
       {/* Main content */}
@@ -156,7 +143,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <span className="font-bold text-primary">Admin Dashboard</span>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 p-6">
           {children}
         </main>
