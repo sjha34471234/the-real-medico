@@ -6,6 +6,7 @@
  * WHAT CHANGED:
  *   1. Added <link rel="preload"> for 6 critical WOFF2 fonts in <head>
  *   2. Razorpay script now only loads on /checkout (not every page)
+ *   3. [May 11, 2026 - Admin] Navbar/Footer hidden on /admin/* routes
  *
  * WHY:
  *   Font preloads: Network dependency tree showed fonts chaining behind CSS.
@@ -16,6 +17,9 @@
  *   unused CSS loading on product pages where payment is never triggered.
  *   Now only loads on /checkout where it's actually needed.
  *
+ *   Admin layout: /admin/* has its own sidebar layout — store Navbar/Footer
+ *   must not render there or they overlap the admin shell.
+ *
  * FONTS NOT PRELOADED (intentional):
  *   Inter_18pt-Light (weight 300) — rarely used above the fold
  *   Merriweather-Regular (weight 400) — body text, loaded after LCP
@@ -23,6 +27,7 @@
  * RULE FOR FUTURE CLAUDE:
  *   DO NOT remove the font preload links — they fix the 1,054ms chain.
  *   DO NOT move Razorpay back to loading on all pages.
+ *   DO NOT remove the isAdmin check — admin has its own layout.
  *   crossOrigin="anonymous" is REQUIRED on font preloads — without it
  *   the browser fetches the font twice (preload + actual use).
  *
@@ -30,6 +35,7 @@
  *   May 10 2026: Removed Google Fonts <link> tags — fonts self-hosted
  *   May 10 2026: Razorpay moved from <head> to lazyOnload
  *   May 11 2026: Font preloads added, Razorpay made conditional
+ *   May 11 2026: Admin Navbar/Footer suppression added
  * ============================================================
  */
 
@@ -84,6 +90,10 @@ export default function RootLayout({
   const pathname = headersList.get('x-invoke-path') || headersList.get('x-pathname') || ''
   const isCheckout = pathname === '/checkout'
 
+  // [May 11, 2026] REASON: Admin has its own sidebar layout in app/admin/layout.tsx
+  // Store Navbar + Footer must NOT render on /admin/* — they overlap the admin shell
+  const isAdmin = pathname.startsWith('/admin')
+
   return (
     <html lang="en">
       <head>
@@ -117,20 +127,7 @@ export default function RootLayout({
          *   browser fetches the font TWICE — once for preload (wasted), once for real use.
          *   crossOrigin="anonymous" must be on every font preload link.
          *
-         * FONTS PRELOADED (above-the-fold critical):
-         *   Inter Regular 400  — body text, navbar, buttons (most used)
-         *   Inter Medium 500   — subheadings, labels
-         *   Inter SemiBold 600 — section headings
-         *   Inter Bold 700     — h1, prices, CTAs
-         *   Merriweather Bold 700     — heading font weight
-         *   Merriweather UltraBold 900 — hero/display headings
-         *
-         * FONTS NOT PRELOADED (intentional — not above the fold):
-         *   Inter Light 300        — rarely used, not in critical path
-         *   Merriweather Regular 400 — body copy, loads after LCP
-         *
          * ⚠️ DO NOT REMOVE THESE — removing reverts the 1,054ms chain delay
-         * ⚠️ DO NOT ADD Inter Light or Merriweather Regular here — wastes bandwidth
          */}
         <link rel="preload" href="/fonts/Inter_18pt-Regular.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/Inter_24pt-Medium.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
@@ -138,12 +135,6 @@ export default function RootLayout({
         <link rel="preload" href="/fonts/Inter_28pt-Bold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/Merriweather-Bold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/Merriweather%20UltraBold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
-
-        {/*
-         * ── NO Google Fonts link tags here ──
-         * Fonts are self-hosted via @font-face in globals.css
-         * DO NOT add Google Fonts <link> tags back — performance regression
-         */}
 
         {/* ── Schema.org structured data ── */}
         <script
@@ -172,31 +163,19 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <Navbar />
+        {/* [May 11, 2026] REASON: isAdmin check — admin has own layout with sidebar */}
+        {!isAdmin && <Navbar />}
         <main className="min-h-screen">
           {children}
         </main>
-        <Footer />
+        {!isAdmin && <Footer />}
         <Toaster position="bottom-right" />
 
         {/*
          * ── Razorpay — conditional, only on /checkout ──
          * [May 11, 2026] CHANGED: Was loading on every page (lazyOnload)
          * NOW: Only loads when pathname === '/checkout'
-         *
-         * WHY: PageSpeed showed 236 KiB unused JS + 21.7 KiB unused CSS on product pages.
-         * Razorpay is never triggered on shop/product/home pages — pure waste.
-         *
-         * HOW pathname DETECTION WORKS:
-         * Next.js sets x-invoke-path header server-side. We read it in RootLayout
-         * which is a Server Component. isCheckout is evaluated at request time.
-         *
-         * KNOWN LIMITATION (cannot fix):
-         * Razorpay's checkout.js includes 203 KiB of legacy polyfills — their code.
-         * Shows as PageSpeed warning even on /checkout. Accept it, cannot be removed.
-         *
          * ⚠️ DO NOT move back to loading on all pages
-         * ⚠️ DO NOT use strategy="beforeInteractive" — blocks render
          */}
         {isCheckout && (
           <Script
