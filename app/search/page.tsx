@@ -1,3 +1,12 @@
+// ============================================================
+// FILE: app/search/page.tsx
+// PURPOSE: Search page — fetches all products server-side, passes to SearchClient
+// LAST CHANGED: May 11, 2026
+// WHY IT EXISTS: Server-side product fetch with ISR, client handles filtering
+// ⚠️ DO NOT CHANGE: searchParams is NOT Promise — Next.js 14 syntax
+// ⚠️ DO NOT CHANGE: revalidate 3600 — ISR, not force-dynamic
+// ============================================================
+
 import { Suspense } from 'react'
 import SearchClient from '@/components/SearchClient'
 
@@ -39,13 +48,15 @@ export const metadata = {
   description: 'Search medical merchandise for healthcare professionals.',
 }
 
+// [May 11, 2026] REASON: searchParams is NOT a Promise in Next.js 14
+// Promise<searchParams> is Next.js 15 syntax — causes silent issues in 14
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; sort?: string; category?: string }>
+  searchParams: { q?: string; sort?: string; category?: string }
 }) {
-  const params = await searchParams
   const products = await getAllProducts()
+
   return (
     <Suspense fallback={
       <div className="max-w-6xl mx-auto px-4 py-12 animate-pulse">
@@ -65,9 +76,9 @@ export default async function SearchPage({
     }>
       <SearchClient
         products={products}
-        initialQuery={params.q || ''}
-        initialSort={params.sort || 'relevance'}
-        initialCategory={params.category || 'all'}
+        initialQuery={searchParams.q || ''}
+        initialSort={searchParams.sort || 'relevance'}
+        initialCategory={searchParams.category || 'all'}
       />
     </Suspense>
   )
