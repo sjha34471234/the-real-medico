@@ -1,8 +1,8 @@
 // ============================================================
 // FILE: app/admin/login/page.tsx
-// PURPOSE: Admin login UI — calls /api/admin/login, handles rate limit errors
+// PURPOSE: Admin login UI — instant redirect on success
 // LAST CHANGED: May 11, 2026
-// WHY IT EXISTS: Replaces old plaintext password check in admin/page.tsx
+// WHY IT EXISTS: Replaces old plaintext password check
 // ⚠️ DO NOT CHANGE: No localStorage auth — session is httpOnly cookie only
 // ============================================================
 
@@ -17,7 +17,7 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false)
 
   const handleLogin = async () => {
-    if (!password.trim()) return
+    if (!password.trim() || loading) return
     setLoading(true)
     setError('')
 
@@ -35,10 +35,12 @@ export default function AdminLoginPage() {
         return
       }
 
+      // [May 11] REASON: Use window.location for hard redirect — guarantees
+      // cookie is sent on next request. router.push() can race with cookie set.
       if (data.needsSetup) {
-        router.push('/admin/setup')
+        window.location.href = '/admin/setup'
       } else {
-        router.push('/admin')
+        window.location.href = '/admin'
       }
     } catch {
       setError('Network error. Try again.')
@@ -49,7 +51,6 @@ export default function AdminLoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-accent px-4">
       <div className="w-full max-w-sm">
-        {/* Logo / Brand */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-white text-2xl font-bold">RM</span>
