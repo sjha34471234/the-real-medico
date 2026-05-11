@@ -66,7 +66,7 @@ export default function AdminProductsPage() {
   useEffect(() => { setPage(1) }, [search, sortBy, filterVisibility, filterCategory])
 
   const categories = useMemo(() => {
-    const cats = [...new Set(products.map(p => p.category).filter(Boolean))]
+    const cats = Array.from(new Set(products.map(p => p.category).filter(Boolean)))
     return ['all', ...cats.sort()]
   }, [products])
 
