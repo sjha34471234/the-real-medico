@@ -1,5 +1,19 @@
+'use client'
+// ============================================================
+// FILE: components/Footer.tsx
+// PURPOSE: Store footer
+// LAST CHANGED: May 11, 2026
+// ⚠️ DO NOT CHANGE: usePathname admin check — prevents footer showing on admin pages
+// ============================================================
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+
 export default function Footer() {
+  const pathname = usePathname()
+
+  // [May 11, 2026] REASON: Admin has its own sidebar layout — store footer must not render
+  if (pathname?.startsWith('/admin')) return null
+
   return (
     <footer className="bg-text-dark text-white pt-12 pb-6 px-4">
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
@@ -10,7 +24,6 @@ export default function Footer() {
           <p className="text-slate-400 text-sm leading-relaxed max-w-xs mb-4">
             Premium merchandise for healthcare professionals. Wear your passion for medicine with pride.
           </p>
-          {/* Social Links */}
           <div className="flex gap-3">
             <a href="https://instagram.com/therealmedico_" target="_blank" rel="noopener noreferrer"
               className="w-9 h-9 bg-slate-700 hover:bg-primary rounded-lg flex items-center justify-center transition-colors text-sm">
@@ -47,7 +60,6 @@ export default function Footer() {
           </ul>
         </div>
       </div>
-      {/* Trust badges */}
       <div className="max-w-6xl mx-auto border-t border-slate-700 pt-6 mb-6">
         <div className="flex flex-wrap justify-center gap-6 text-slate-500 text-xs">
           <span>🔒 SSL Secured</span>
