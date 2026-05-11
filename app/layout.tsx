@@ -1,33 +1,35 @@
 /*
  * ============================================================
- * CHANGE LOG — May 10, 2026 — FONT SELF-HOSTING
+ * CHANGE LOG — May 11, 2026 — FONT PRELOADS + CONDITIONAL RAZORPAY
  * ============================================================
  *
  * WHAT CHANGED:
- *   REMOVED the 3 Google Fonts <link> tags that were previously
- *   added here (preconnect + stylesheet).
+ *   1. Added <link rel="preload"> for 6 critical WOFF2 fonts in <head>
+ *   2. Razorpay script now only loads on /checkout (not every page)
  *
  * WHY:
- *   Fonts are now self-hosted in /public/fonts/ via @font-face
- *   in globals.css. No external CDN needed at all.
- *   Eliminates ~750ms Google Fonts CDN round trips on mobile.
+ *   Font preloads: Network dependency tree showed fonts chaining behind CSS.
+ *   Browser was discovering fonts only AFTER CSS parsed = 1,054ms delay.
+ *   Preload tells browser to fetch fonts immediately on first byte = parallel.
  *
- * WHAT IS STILL HERE (do not remove these):
- *   - Printify CDN preconnect — product images still come from
- *     images.printify.com, this saves ~200ms on first image load
- *   - Razorpay lazyOnload — payment script, must stay lazyOnload
- *   - Google Analytics afterInteractive — tracking, stays deferred
- *   - Microsoft Clarity afterInteractive — session recording, deferred
+ *   Razorpay conditional: PageSpeed showed 236 KiB unused JS + 21.7 KiB
+ *   unused CSS loading on product pages where payment is never triggered.
+ *   Now only loads on /checkout where it's actually needed.
+ *
+ * FONTS NOT PRELOADED (intentional):
+ *   Inter_18pt-Light (weight 300) — rarely used above the fold
+ *   Merriweather-Regular (weight 400) — body text, loaded after LCP
  *
  * RULE FOR FUTURE CLAUDE:
- *   DO NOT add Google Fonts <link> or preconnect tags back here.
- *   Fonts are handled entirely by globals.css @font-face.
- *   If you see <link rel="stylesheet" href="fonts.googleapis.com">
- *   anywhere in this project — DELETE IT, it is a regression.
+ *   DO NOT remove the font preload links — they fix the 1,054ms chain.
+ *   DO NOT move Razorpay back to loading on all pages.
+ *   crossOrigin="anonymous" is REQUIRED on font preloads — without it
+ *   the browser fetches the font twice (preload + actual use).
  *
- * FULL HISTORY:
- *   Phase 1 (May 10 2026): @import removed from globals.css → moved to <link> here
- *   Phase 2 (May 10 2026): <link> removed from here → fonts fully self-hosted in globals.css
+ * PREVIOUS HISTORY:
+ *   May 10 2026: Removed Google Fonts <link> tags — fonts self-hosted
+ *   May 10 2026: Razorpay moved from <head> to lazyOnload
+ *   May 11 2026: Font preloads added, Razorpay made conditional
  * ============================================================
  */
 
@@ -37,6 +39,7 @@ import Navbar from '@/components/Navbar'
 import Footer from '@/components/Footer'
 import { Toaster } from 'react-hot-toast'
 import Script from 'next/script'
+import { headers } from 'next/headers'
 
 export const metadata: Metadata = {
   title: 'The Real Medico — Medical Merchandise Store',
@@ -75,6 +78,12 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  // [May 11, 2026] REASON: Read pathname server-side to conditionally load Razorpay
+  // Only /checkout needs Razorpay — loading it everywhere wastes 236 KiB on product pages
+  const headersList = headers()
+  const pathname = headersList.get('x-invoke-path') || headersList.get('x-pathname') || ''
+  const isCheckout = pathname === '/checkout'
+
   return (
     <html lang="en">
       <head>
@@ -87,8 +96,7 @@ export default function RootLayout({
         {/*
          * ── Printify CDN preconnect ──
          * WHY: All product images are served from images.printify.com
-         * This pre-establishes the TCP connection before the browser
-         * discovers the image URLs in the page HTML.
+         * Pre-establishes TCP connection before browser discovers image URLs.
          * SAVES: ~200ms on first product image load
          * RULE: Keep these — removing them slows down shop/product pages
          */}
@@ -96,14 +104,48 @@ export default function RootLayout({
         <link rel="preconnect" href="https://images.printify.com" crossOrigin="anonymous" />
 
         {/*
+         * ── Critical font preloads ──
+         * [May 11, 2026] ADDED: Fixes 1,054ms font chain delay found in PageSpeed
+         *
+         * WHY THIS WORKS:
+         *   Without preload: browser loads HTML → loads CSS → parses CSS → discovers fonts → downloads fonts
+         *   With preload:    browser loads HTML → immediately starts downloading fonts IN PARALLEL with CSS
+         *   Saves the entire CSS parse time (~829ms) from the font download critical path.
+         *
+         * WHY crossOrigin="anonymous" IS REQUIRED:
+         *   Fonts are loaded with CORS mode. If preload crossOrigin doesn't match actual fetch,
+         *   browser fetches the font TWICE — once for preload (wasted), once for real use.
+         *   crossOrigin="anonymous" must be on every font preload link.
+         *
+         * FONTS PRELOADED (above-the-fold critical):
+         *   Inter Regular 400  — body text, navbar, buttons (most used)
+         *   Inter Medium 500   — subheadings, labels
+         *   Inter SemiBold 600 — section headings
+         *   Inter Bold 700     — h1, prices, CTAs
+         *   Merriweather Bold 700     — heading font weight
+         *   Merriweather UltraBold 900 — hero/display headings
+         *
+         * FONTS NOT PRELOADED (intentional — not above the fold):
+         *   Inter Light 300        — rarely used, not in critical path
+         *   Merriweather Regular 400 — body copy, loads after LCP
+         *
+         * ⚠️ DO NOT REMOVE THESE — removing reverts the 1,054ms chain delay
+         * ⚠️ DO NOT ADD Inter Light or Merriweather Regular here — wastes bandwidth
+         */}
+        <link rel="preload" href="/fonts/Inter_18pt-Regular.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/Inter_24pt-Medium.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/Inter_28pt-SemiBold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/Inter_28pt-Bold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/Merriweather-Bold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/Merriweather%20UltraBold.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+
+        {/*
          * ── NO Google Fonts link tags here ──
-         * Fonts (Inter + Merriweather) are self-hosted via @font-face in globals.css
-         * Files live in /public/fonts/ on our own Vercel domain
-         * DO NOT add Google Fonts <link> tags back here — it is a performance regression
-         * See globals.css for full explanation and file list
+         * Fonts are self-hosted via @font-face in globals.css
+         * DO NOT add Google Fonts <link> tags back — performance regression
          */}
 
-        {/* ── Schema.org structured data — helps Google understand the site ── */}
+        {/* ── Schema.org structured data ── */}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -138,28 +180,35 @@ export default function RootLayout({
         <Toaster position="bottom-right" />
 
         {/*
-         * ── Razorpay — strategy="lazyOnload" ──
-         * WHY: Was previously a raw <script> in <head> which blocked ALL rendering
-         * lazyOnload = loads after the page is fully idle
-         * Razorpay is only needed when user reaches checkout, not on page load
-         * SAVES: Removes 56 KiB blocking script from critical path
-         * RULE: Never move back to <head>. Never use strategy="beforeInteractive".
+         * ── Razorpay — conditional, only on /checkout ──
+         * [May 11, 2026] CHANGED: Was loading on every page (lazyOnload)
+         * NOW: Only loads when pathname === '/checkout'
+         *
+         * WHY: PageSpeed showed 236 KiB unused JS + 21.7 KiB unused CSS on product pages.
+         * Razorpay is never triggered on shop/product/home pages — pure waste.
+         *
+         * HOW pathname DETECTION WORKS:
+         * Next.js sets x-invoke-path header server-side. We read it in RootLayout
+         * which is a Server Component. isCheckout is evaluated at request time.
          *
          * KNOWN LIMITATION (cannot fix):
          * Razorpay's checkout.js includes 203 KiB of legacy polyfills — their code.
-         * Shows as PageSpeed warning. Accept it, cannot be removed.
+         * Shows as PageSpeed warning even on /checkout. Accept it, cannot be removed.
+         *
+         * ⚠️ DO NOT move back to loading on all pages
+         * ⚠️ DO NOT use strategy="beforeInteractive" — blocks render
          */}
-        <Script
-          src="https://checkout.razorpay.com/v1/checkout.js"
-          strategy="lazyOnload"
-        />
+        {isCheckout && (
+          <Script
+            src="https://checkout.razorpay.com/v1/checkout.js"
+            strategy="lazyOnload"
+          />
+        )}
 
         {/*
          * ── Google Analytics — strategy="afterInteractive" ──
          * GA ID: G-N68DENGZD2
-         * WHY afterInteractive: loads after hydration, does not block render
-         * KNOWN LIMITATION: GA script is 153 KiB — shows in PageSpeed unused JS.
-         * Unavoidable if you want Google Analytics. Accept this warning.
+         * KNOWN LIMITATION: 153 KiB — unavoidable. Accept PageSpeed warning.
          */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-N68DENGZD2"
@@ -177,7 +226,6 @@ export default function RootLayout({
         {/*
          * ── Microsoft Clarity — strategy="afterInteractive" ──
          * Clarity ID: wo9hkyhyop
-         * WHY afterInteractive: session recording script, not needed for render
          */}
         <Script id="microsoft-clarity" strategy="afterInteractive">
           {`
