@@ -1,3 +1,12 @@
+// ============================================================
+// FILE: components/ReviewSection.tsx
+// PURPOSE: Display product reviews + admin replies
+// LAST CHANGED: May 11, 2026
+// WHY IT EXISTS: Customer reviews with verified purchase gate
+// DEPENDENCIES: Supabase reviews table, review_upvotes table
+// ⚠️ DO NOT CHANGE: admin_reply block — shows official reply at top of review
+// ============================================================
+
 'use client'
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
@@ -18,6 +27,7 @@ interface Review {
   is_member: boolean
   upvotes: number
   verified_purchase: boolean
+  admin_reply: string | null
   created_at: string
   userUpvoted?: boolean
 }
@@ -40,8 +50,6 @@ export default function ReviewSection({ productId }: { productId: string }) {
 
       if (session?.user) {
         setUser(session.user)
-
-        // Check membership
         const { data: membership } = await supabase
           .from('memberships')
           .select('active')
@@ -50,14 +58,13 @@ export default function ReviewSection({ productId }: { productId: string }) {
           .single()
         if (membership) setIsMember(true)
 
-        // Check if user has purchased this product
         const { data: orders } = await supabase
           .from('orders')
           .select('line_items')
           .eq('user_id', session.user.id)
           .eq('status', 'confirmed')
 
-        if (orders && orders.length > 0) {
+        if (orders?.length) {
           const purchased = orders.some((order: any) => {
             const items = order.line_items || []
             return items.some((item: any) => item.productId === productId)
@@ -74,12 +81,12 @@ export default function ReviewSection({ productId }: { productId: string }) {
   const loadReviews = async (userId?: string) => {
     const supabase = getSupabase()
     const { data } = await supabase
-  .from('reviews')
-  .select('*')
-  .eq('product_id', productId)
-  .order('upvotes', { ascending: false })
-  .order('created_at', { ascending: false })
-  .limit(10)
+      .from('reviews')
+      .select('*')
+      .eq('product_id', productId)
+      .order('upvotes', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(10)
 
     if (data) {
       if (userId) {
@@ -109,8 +116,7 @@ export default function ReviewSection({ productId }: { productId: string }) {
         r.id === reviewId ? { ...r, upvotes: r.upvotes - 1, userUpvoted: false } : r
       ))
     } else {
-      await supabase.from('review_upvotes')
-        .insert({ user_id: user.id, review_id: reviewId })
+      await supabase.from('review_upvotes').insert({ user_id: user.id, review_id: reviewId })
       await supabase.from('reviews')
         .update({ upvotes: reviews.find(r => r.id === reviewId)!.upvotes + 1 })
         .eq('id', reviewId)
@@ -150,28 +156,20 @@ export default function ReviewSection({ productId }: { productId: string }) {
     ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
     : null
 
-  // Decide what to show for the write review button
   const renderReviewButton = () => {
     if (!user) return (
-      <Link href="/account" className="btn-secondary text-sm py-2 px-4">
-        Sign in to Review
-      </Link>
+      <Link href="/account" className="btn-secondary text-sm py-2 px-4">Sign in to Review</Link>
     )
     if (checkingPurchase) return (
       <div className="text-sm text-text-slate">Checking purchase...</div>
     )
     if (!hasPurchased) return (
-      <div className="text-right">
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-sm text-amber-700 inline-flex items-center gap-2">
-          🛒 Purchase this product to write a review
-        </div>
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 text-sm text-amber-700 inline-flex items-center gap-2">
+        🛒 Purchase this product to write a review
       </div>
     )
     return (
-      <button
-        onClick={() => setShowForm(!showForm)}
-        className="btn-primary text-sm py-2 px-4"
-      >
+      <button onClick={() => setShowForm(!showForm)} className="btn-primary text-sm py-2 px-4">
         {showForm ? 'Cancel' : '+ Write Review'}
       </button>
     )
@@ -183,9 +181,7 @@ export default function ReviewSection({ productId }: { productId: string }) {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-2xl font-heading font-bold text-text-dark">
-              Customer Reviews
-            </h2>
+            <h2 className="text-2xl font-heading font-bold text-text-dark">Customer Reviews</h2>
             {avgRating ? (
               <div className="flex items-center gap-2 mt-1">
                 <div className="flex">
@@ -194,9 +190,7 @@ export default function ReviewSection({ productId }: { productId: string }) {
                   ))}
                 </div>
                 <span className="font-bold">{avgRating}</span>
-                <span className="text-text-slate text-sm">
-                  ({reviews.length} review{reviews.length !== 1 ? 's' : ''})
-                </span>
+                <span className="text-text-slate text-sm">({reviews.length} review{reviews.length !== 1 ? 's' : ''})</span>
               </div>
             ) : (
               <p className="text-text-slate text-sm mt-1">No reviews yet</p>
@@ -210,43 +204,23 @@ export default function ReviewSection({ productId }: { productId: string }) {
           <div className="card p-6 mb-8 border-2 border-primary">
             <div className="flex items-center gap-2 mb-4">
               <h3 className="font-bold">Write Your Review</h3>
-              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                ✅ Verified Purchase
-              </span>
+              <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">✅ Verified Purchase</span>
             </div>
             <div className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-text-slate mb-2 block">Rating</label>
                 <div className="flex gap-2">
                   {[1,2,3,4,5].map(s => (
-                    <button
-                      key={s}
-                      onClick={() => setForm({ ...form, rating: s })}
-                      className={`text-2xl transition-transform hover:scale-110 ${s <= form.rating ? 'text-yellow-400' : 'text-slate-200'}`}
-                    >
-                      ★
-                    </button>
+                    <button key={s} onClick={() => setForm({ ...form, rating: s })}
+                      className={`text-2xl transition-transform hover:scale-110 ${s <= form.rating ? 'text-yellow-400' : 'text-slate-200'}`}>★</button>
                   ))}
                 </div>
               </div>
-              <input
-                placeholder="Review title (optional)"
-                value={form.title}
-                onChange={e => setForm({ ...form, title: e.target.value })}
-                className="input-field"
-              />
-              <textarea
-                placeholder="Share your experience with this product..."
-                value={form.body}
-                onChange={e => setForm({ ...form, body: e.target.value })}
-                rows={4}
-                className="input-field resize-none"
-              />
-              <button
-                onClick={handleSubmit}
-                disabled={submitting}
-                className="btn-primary w-full"
-              >
+              <input placeholder="Review title (optional)" value={form.title}
+                onChange={e => setForm({ ...form, title: e.target.value })} className="input-field" />
+              <textarea placeholder="Share your experience..." value={form.body}
+                onChange={e => setForm({ ...form, body: e.target.value })} rows={4} className="input-field resize-none" />
+              <button onClick={handleSubmit} disabled={submitting} className="btn-primary w-full">
                 {submitting ? 'Submitting...' : 'Submit Review'}
               </button>
             </div>
@@ -260,7 +234,6 @@ export default function ReviewSection({ productId }: { productId: string }) {
               <div key={i} className="card p-5 animate-pulse space-y-3">
                 <div className="h-4 bg-slate-200 rounded w-1/4" />
                 <div className="h-3 bg-slate-200 rounded w-full" />
-                <div className="h-3 bg-slate-200 rounded w-3/4" />
               </div>
             ))}
           </div>
@@ -283,14 +256,10 @@ export default function ReviewSection({ productId }: { productId: string }) {
                       <div className="flex flex-wrap items-center gap-1.5">
                         <span className="font-semibold text-sm">{review.reviewer_name}</span>
                         {review.is_member && (
-                          <span className="bg-primary text-white text-xs px-2 py-0.5 rounded-full font-bold">
-                            ⭐ Member
-                          </span>
+                          <span className="bg-primary text-white text-xs px-2 py-0.5 rounded-full font-bold">⭐ Member</span>
                         )}
                         {review.verified_purchase && (
-                          <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">
-                            ✅ Verified Purchase
-                          </span>
+                          <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full font-medium">✅ Verified Purchase</span>
                         )}
                       </div>
                       <div className="flex items-center gap-1 mt-0.5">
@@ -304,16 +273,29 @@ export default function ReviewSection({ productId }: { productId: string }) {
                     {new Date(review.created_at).toLocaleDateString()}
                   </span>
                 </div>
-                {review.title && (
-                  <p className="font-semibold text-text-dark mb-1">{review.title}</p>
-                )}
+
+                {review.title && <p className="font-semibold text-text-dark mb-1">{review.title}</p>}
                 <p className="text-text-slate text-sm leading-relaxed mb-3">{review.body}</p>
+
+                {/* [May 11, 2026] Admin reply block — shows at bottom of review, above upvote */}
+                {/* Styled distinctly so customers know it's official */}
+                {review.admin_reply && (
+                  <div className="bg-blue-50 border-l-4 border-primary rounded-r-xl p-4 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
+                        <span className="text-white text-xs font-bold">RM</span>
+                      </div>
+                      <span className="text-sm font-bold text-primary">The Real Medico</span>
+                      <span className="text-xs bg-primary text-white px-2 py-0.5 rounded-full ml-1">Official Reply</span>
+                    </div>
+                    <p className="text-sm text-text-dark leading-relaxed">{review.admin_reply}</p>
+                  </div>
+                )}
+
                 <button
                   onClick={() => handleUpvote(review.id, review.userUpvoted || false)}
                   className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-lg transition-all ${
-                    review.userUpvoted
-                      ? 'bg-primary text-white'
-                      : 'bg-accent text-text-slate hover:bg-slate-200'
+                    review.userUpvoted ? 'bg-primary text-white' : 'bg-accent text-text-slate hover:bg-slate-200'
                   }`}
                 >
                   👍 Helpful ({review.upvotes})
