@@ -167,8 +167,9 @@ export default function SubscriptionAnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState<Period>('monthly')
   const [activeGraphs, setActiveGraphs] = useState<Set<GraphKey>>(
-    new Set(['active', 'new', 'cancelled', 'net'])
-  )
+  new Set(['active', 'new', 'cancelled', 'net'] as GraphKey[])
+)
+
 
   const fetchData = async () => {
     setLoading(true)
