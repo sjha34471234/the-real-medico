@@ -1,12 +1,34 @@
 'use client'
+// ============================================================
+// FILE: app/cart/page.tsx
+// PURPOSE: Shopping cart page
+// LAST CHANGED: May 12, 2026
+// WHY IT EXISTS: Shows cart items, quantities, order summary
+// DEPENDENCIES: cartStore, currencyStore, SaleCountdown, activeSale lib
+// ⚠️ DO NOT CHANGE: 'use client' required — uses cartStore (Zustand)
+// ⚠️ DO NOT CHANGE: fetchActiveSale is client-side here (no server fetch in client components)
+// ============================================================
+
+// --- CHANGE LOG ---
+// [May 12, 2026] ADDED: fetchActiveSale + SaleCountdown above order summary (Phase 8)
+// REASON: Cart page must show active sale countdown to encourage checkout
+// --- END CHANGE LOG ---
+
 import Link from 'next/link'
 import { Trash2, Plus, Minus } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import useCartStore from '@/store/cartStore'
 import { useCurrencyStore } from '@/store/currencyStore'
+import { fetchActiveSale, ActiveSale } from '@/lib/activeSale'
+import SaleCountdown from '@/components/SaleCountdown'
 
 export default function CartPage() {
   const { items, removeItem, updateQty, total } = useCartStore()
   const { formatPrice } = useCurrencyStore()
+
+  // [May 12, 2026] REASON: Client-side fetch — cart page is 'use client', can't use server fetch
+  const [sale, setSale] = useState<ActiveSale | null>(null)
+  useEffect(() => { fetchActiveSale().then(setSale) }, [])
 
   if (items.length === 0) {
     return (
@@ -22,6 +44,12 @@ export default function CartPage() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
       <h1 className="text-4xl font-heading font-bold text-primary mb-8">Your Cart</h1>
+
+      {/* [May 12, 2026] REASON: Sale countdown above cart contents — full width, high visibility */}
+      {sale && (
+        <SaleCountdown sale={sale} variant="full" className="mb-6" />
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
         {/* Items */}
