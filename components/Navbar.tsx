@@ -11,6 +11,7 @@
 // --- CHANGE LOG ---
 // [May 12, 2026] ADDED: SaleBanner above nav for SALES+ Phase 8
 // REASON: Sitewide sale visibility strip required on all store pages
+// [May 12, 2026] ADDED: Cross-domain links to learn.therealmedico.store
 // --- END CHANGE LOG ---
 
 import CurrencySelector from '@/components/CurrencySelector';
@@ -112,13 +113,10 @@ export default function Navbar() {
     initCurrency()
   }, [])
 
-  // [May 11, 2026] REASON: Admin has its own sidebar layout — store navbar must not render
-  // Using usePathname (client-side) is 100% reliable on every domain including Vercel previews
   if (pathname?.startsWith('/admin')) return null
 
   return (
     <>
-      {/* [May 12, 2026] REASON: SaleBanner outside <nav> so nav height stays fixed */}
       <SaleBanner />
 
       <nav className="sticky top-0 z-40 bg-white border-b border-slate-100 shadow-sm">
@@ -136,6 +134,15 @@ export default function Navbar() {
             <Link href="/shop" className="text-text-dark hover:text-primary font-medium transition-colors">
               Shop
             </Link>
+            
+            {/* NEW: Learn World Bridge (Desktop) */}
+            <a 
+              href="https://learn.therealmedico.store" 
+              className="text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
+            >
+              Learn <span className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase">3D</span>
+            </a>
+
             <Link href="/trending" className="text-text-dark hover:text-primary font-medium transition-colors">
               🔥 Trending
             </Link>
@@ -192,6 +199,7 @@ export default function Navbar() {
           <div className="md:hidden bg-white border-t border-slate-100 px-4 py-4 flex flex-col gap-1">
             {[
               { href: '/shop', label: '🛍️ Shop' },
+              { href: 'https://learn.therealmedico.store', label: '🧠 Learn 3D' }, // NEW: Learn World Bridge (Mobile)
               { href: '/trending', label: '🔥 Trending' },
               { href: '/search', label: '🔍 Search' },
               { href: '/about', label: '👥 About' },
