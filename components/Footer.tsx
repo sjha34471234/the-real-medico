@@ -2,16 +2,20 @@
 // ============================================================
 // FILE: components/Footer.tsx
 // PURPOSE: Store footer
-// LAST CHANGED: May 11, 2026
+// LAST CHANGED: May 12, 2026
 // ⚠️ DO NOT CHANGE: usePathname admin check — prevents footer showing on admin pages
 // ============================================================
+
+// --- CHANGE LOG ---
+// [May 12, 2026] ADDED: Cross-domain link to Learn World (3D Anatomy)
+// --- END CHANGE LOG ---
+
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 export default function Footer() {
   const pathname = usePathname()
 
-  // [May 11, 2026] REASON: Admin has its own sidebar layout — store footer must not render
   if (pathname?.startsWith('/admin')) return null
 
   return (
@@ -43,6 +47,14 @@ export default function Footer() {
           <h4 className="font-bold mb-4 text-white">Shop</h4>
           <ul className="space-y-2 text-slate-400 text-sm">
             <li><Link href="/shop" className="hover:text-white transition-colors">All Products</Link></li>
+            
+            {/* NEW: Learn World Bridge (Footer) */}
+            <li>
+              <a href="https://learn.therealmedico.store" className="hover:text-white transition-colors flex items-center gap-2">
+                Learn (3D Anatomy) <span className="bg-primary/20 text-primary border border-primary/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full">NEW</span>
+              </a>
+            </li>
+
             <li><Link href="/shop?cat=tshirts" className="hover:text-white transition-colors">T-Shirts</Link></li>
             <li><Link href="/shop?cat=hoodies" className="hover:text-white transition-colors">Hoodies</Link></li>
             <li><Link href="/shop?cat=mugs" className="hover:text-white transition-colors">Mugs</Link></li>
