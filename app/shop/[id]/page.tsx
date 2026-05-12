@@ -1,40 +1,37 @@
 // ============================================================
 // FILE: app/shop/[id]/page.tsx
 // PURPOSE: Server component for individual product detail pages
-// LAST CHANGED: May 11, 2026
+// LAST CHANGED: May 12, 2026
 // WHY IT EXISTS: Fetches product from Printify API server-side, passes to ProductDetailClient
-// DEPENDENCIES: Printify API, ProductDetailClient, currencyStore (client)
+// DEPENDENCIES: Printify API, ProductDetailClient, SaleCountdown, /api/sales/active
 // ⚠️ DO NOT CHANGE:
 //   - revalidate: 3600 on fetch — ISR caching, prevents cold API call on every visit
 //   - export const revalidate = 3600 — page-level ISR, NOT force-dynamic
 //   - params is { params: { id: string } } NOT Promise — Next.js 14 syntax
 //   - LCP preload link — must stay, eliminates image discovery delay
+//   - getActiveSale uses NEXT_PUBLIC_SITE_URL — required for server-side fetch
 // ============================================================
 
 // --- CHANGE LOG ---
 // [May 11, 2026] CHANGED: Removed force-dynamic + revalidate=0, restored ISR
 // REASON: force-dynamic was hitting Printify API cold on every single page visit
-// WHAT BROKE BEFORE: Every product page load = fresh API call = added latency to LCP
-// OLD CODE WAS: export const dynamic = 'force-dynamic' / export const revalidate = 0
 //
 // [May 11, 2026] CHANGED: Fixed params type — was Promise<{id}>, now {id: string} (Next.js 14)
-// REASON: Promise<params> is Next.js 15 syntax. Project is on Next.js 14.2.29.
-// WHAT BROKE BEFORE: May have caused silent param resolution issues
 //
 // [May 11, 2026] ADDED: LCP image preload link in page head
 // REASON: Browser was discovering product image late (after JS hydration)
-// HOW: Server knows the image URL — inject preload link so browser fetches it immediately
-// EXPECTED RESULT: LCP should drop significantly on product pages
+//
+// [May 12, 2026] ADDED: getActiveSale() + SaleCountdown below price (Phase 8)
+// REASON: Product pages must show active sale countdown
 // --- END CHANGE LOG ---
 
 import { Suspense } from 'react'
 import ProductDetailClient from '@/components/ProductDetailClient'
+import SaleCountdown from '@/components/SaleCountdown'
+import { ActiveSale } from '@/lib/activeSale'
 import { notFound } from 'next/navigation'
 
 // [May 11, 2026] REASON: ISR at 1 hour — product data doesn't change minute-to-minute.
-// Vercel caches the rendered page for 1 hour, then regenerates on next request.
-// This eliminates the cold Printify API call on every visit.
-// To force-refresh a product: visit /api/revalidate
 export const revalidate = 3600
 
 async function getProduct(id: string) {
@@ -72,8 +69,23 @@ async function getProduct(id: string) {
   }
 }
 
+// [May 12, 2026] REASON: Fetch active sale server-side so countdown renders on first load.
+// revalidate: 60 — sale status can change, refresh every minute is sufficient.
+async function getActiveSale(): Promise<ActiveSale | null> {
+  try {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SITE_URL}/api/sales/active`,
+      { next: { revalidate: 60 } }
+    )
+    if (!res.ok) return null
+    const json = await res.json()
+    return json.sale ?? null
+  } catch {
+    return null
+  }
+}
+
 // [May 11, 2026] REASON: Next.js 14 params is NOT a Promise — no await needed
-// Promise<params> syntax is Next.js 15 only — using it in 14 may cause issues
 export async function generateMetadata({ params }: { params: { id: string } }) {
   const product = await getProduct(params.id)
   if (!product) return { title: 'Product Not Found' }
@@ -90,21 +102,13 @@ export async function generateMetadata({ params }: { params: { id: string } }) {
 export default async function ProductPage({ params }: { params: { id: string } }) {
   const product = await getProduct(params.id)
   if (!product) notFound()
+  const sale = await getActiveSale()
 
   return (
     <>
       {/*
        * [May 11, 2026] LCP IMAGE PRELOAD
        * WHY: The main product image is the LCP element on this page.
-       * Without this, browser discovers the image only after:
-       *   HTML → JS bundle → React hydration → component render → image src set
-       * With this preload in <head>, browser fetches the image immediately
-       * on first byte of HTML — in parallel with everything else.
-       *
-       * imageSizes matches next/image sizes prop in ProductDetailClient:
-       *   "(max-width: 768px) 100vw, 50vw"
-       * This tells the browser which size to preload for the current viewport.
-       *
        * ⚠️ DO NOT REMOVE — this is the primary LCP fix for product pages
        * ⚠️ DO NOT change imageSizes without also updating ProductDetailClient sizes prop
        */}
@@ -116,6 +120,13 @@ export default async function ProductPage({ params }: { params: { id: string } }
           imageSizes="(max-width: 768px) 100vw, 50vw"
         />
       </head>
+
+      {/* [May 12, 2026] REASON: Sale countdown above product detail when sale is active */}
+      {sale && (
+        <div className="max-w-6xl mx-auto px-4 pt-6">
+          <SaleCountdown sale={sale} variant="full" className="mb-2" />
+        </div>
+      )}
 
       <Suspense fallback={
         <div className="max-w-6xl mx-auto px-4 py-12 animate-pulse">
@@ -134,4 +145,3 @@ export default async function ProductPage({ params }: { params: { id: string } }
     </>
   )
 }
-
