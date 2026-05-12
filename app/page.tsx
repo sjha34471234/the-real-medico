@@ -1,4 +1,21 @@
+// ============================================================
+// FILE: app/page.tsx
+// PURPOSE: Homepage — fetches featured products + active sale server-side
+// LAST CHANGED: May 12, 2026
+// WHY IT EXISTS: Main store landing page
+// DEPENDENCIES: HomeClient, SaleCountdown, Printify API, /api/sales/active
+// ⚠️ DO NOT CHANGE: revalidate: 3600 on fetch — ISR caching
+// ⚠️ DO NOT CHANGE: getActiveSale uses NEXT_PUBLIC_SITE_URL — required for server fetch
+// ============================================================
+
+// --- CHANGE LOG ---
+// [May 12, 2026] ADDED: getActiveSale() + SaleCountdown banner (Phase 8)
+// REASON: Homepage must show active sale countdown above featured products
+// --- END CHANGE LOG ---
+
 import HomeClient from '@/components/HomeClient'
+import SaleCountdown from '@/components/SaleCountdown'
+import { ActiveSale } from '@/lib/activeSale'
 
 async function getFeaturedProducts() {
   try {
@@ -33,6 +50,22 @@ async function getFeaturedProducts() {
   }
 }
 
+// [May 12, 2026] REASON: Fetch active sale server-side so countdown renders on first load.
+// revalidate: 60 — sale status can change, refresh every minute is sufficient.
+async function getActiveSale(): Promise<ActiveSale | null> {
+  try {
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_SITE_URL}/api/sales/active`,
+      { next: { revalidate: 60 } }
+    )
+    if (!res.ok) return null
+    const json = await res.json()
+    return json.sale ?? null
+  } catch {
+    return null
+  }
+}
+
 export const metadata = {
   title: 'The Real Medico — Premium Medical Merchandise',
   description: 'Premium merchandise for healthcare heroes. T-shirts, hoodies, mugs and more designed for medical professionals.',
@@ -47,11 +80,20 @@ export const metadata = {
 export default async function HomePage() {
   const featuredProducts = await getFeaturedProducts()
   const firstImage = featuredProducts?.[0]?.image ?? null
+  const sale = await getActiveSale()
 
   return (
-    <HomeClient
-      featuredProducts={featuredProducts}
-      firstImage={firstImage}
-    />
+    <>
+      {/* [May 12, 2026] REASON: Show sale countdown above featured products when a sale is active */}
+      {sale && (
+        <div className="max-w-6xl mx-auto px-4 pt-8">
+          <SaleCountdown sale={sale} variant="full" className="mb-2" />
+        </div>
+      )}
+      <HomeClient
+        featuredProducts={featuredProducts}
+        firstImage={firstImage}
+      />
+    </>
   )
 }
