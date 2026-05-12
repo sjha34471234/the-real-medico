@@ -8,7 +8,7 @@
 
 'use client'
 import { useState, useEffect } from 'react'
-import { RefreshCw, TrendingUp, TrendingDown, Users, IndianRupee } from 'lucide-react'
+import { RefreshCw, TrendingUp, TrendingDown, Users, DollarSign } from 'lucide-react'
 
 type Period = 'daily' | 'weekly' | 'monthly' | 'yearly'
 type GraphKey = 'active' | 'new' | 'cancelled' | 'net'
@@ -167,9 +167,8 @@ export default function SubscriptionAnalyticsPage() {
   const [loading, setLoading] = useState(true)
   const [period, setPeriod] = useState<Period>('monthly')
   const [activeGraphs, setActiveGraphs] = useState<Set<GraphKey>>(
-  new Set(['active', 'new', 'cancelled', 'net'] as GraphKey[])
-)
-
+    new Set(['active', 'new', 'cancelled', 'net'])
+  )
 
   const fetchData = async () => {
     setLoading(true)
@@ -256,7 +255,7 @@ export default function SubscriptionAnalyticsPage() {
             </div>
             <div className="card p-5">
               <div className="flex items-center gap-2 mb-2">
-                <IndianRupee className="w-4 h-4 text-amber-600" />
+                <DollarSign className="w-4 h-4 text-amber-600" />
                 <p className="text-xs text-text-slate">MRR</p>
               </div>
               <p className="text-2xl font-bold text-amber-600">₹{data.mrr.toLocaleString()}</p>
