@@ -174,9 +174,18 @@ export default function SubscriptionAnalyticsPage() {
     setLoading(true)
     try {
       const res = await fetch(`/api/admin/analytics/subscriptions?period=${period}`)
+      if (!res.ok) throw new Error(`${res.status}`)
       const json = await res.json()
+      if (json.error) throw new Error(json.error)
       setData(json)
-    } catch {}
+    } catch {
+      // Show empty state rather than infinite loading or crash
+      setData({
+        totalActive: 0, totalAllTime: 0, newInPeriod: 0,
+        cancelledInPeriod: 0, netGrowth: 0, churnRate: 0,
+        mrr: 0, timeline: [], period,
+      })
+    }
     setLoading(false)
   }
 
