@@ -2,20 +2,22 @@
 // ============================================================
 // FILE: components/Navbar.tsx
 // PURPOSE: Store navigation bar
-// LAST CHANGED: May 12, 2026
+// LAST CHANGED: May 13, 2026
 // WHY IT EXISTS: Main store nav
 // ⚠️ DO NOT CHANGE: usePathname admin check — prevents navbar showing on admin pages
 // ⚠️ DO NOT CHANGE: SaleBanner must render OUTSIDE <nav> — keeps nav height stable
+// ⚠️ DO NOT CHANGE: External links use <a> NOT <Link> — Next.js Link is internal only
 // ============================================================
 
 // --- CHANGE LOG ---
 // [May 12, 2026] ADDED: SaleBanner above nav for SALES+ Phase 8
-// REASON: Sitewide sale visibility strip required on all store pages
-// [May 12, 2026] ADDED: Cross-domain links to learn.therealmedico.store
+// [May 12, 2026] ADDED: Learn 3D link to learn.therealmedico.store
+// [May 13, 2026] FIXED: Mobile menu used <Link> for external URL — changed to <a>
+//   Next.js Link does not support external href — causes build warnings + broken nav
 // --- END CHANGE LOG ---
 
-import CurrencySelector from '@/components/CurrencySelector';
-import { useCurrencyStore } from '@/store/currencyStore';
+import CurrencySelector from '@/components/CurrencySelector'
+import { useCurrencyStore } from '@/store/currencyStore'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
@@ -113,10 +115,12 @@ export default function Navbar() {
     initCurrency()
   }, [])
 
+  // [May 11, 2026] REASON: Admin has its own sidebar — store navbar must not render there
   if (pathname?.startsWith('/admin')) return null
 
   return (
     <>
+      {/* [May 12, 2026] REASON: SaleBanner outside <nav> so nav height stays fixed */}
       <SaleBanner />
 
       <nav className="sticky top-0 z-40 bg-white border-b border-slate-100 shadow-sm">
@@ -134,10 +138,10 @@ export default function Navbar() {
             <Link href="/shop" className="text-text-dark hover:text-primary font-medium transition-colors">
               Shop
             </Link>
-            
-            {/* NEW: Learn World Bridge (Desktop) */}
-            <a 
-              href="https://learn.therealmedico.store" 
+
+            {/* [May 13, 2026] REASON: External URL — must use <a> not <Link> */}
+            <a
+              href="https://learn.therealmedico.store"
               className="text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
             >
               Learn <span className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase">3D</span>
@@ -197,9 +201,10 @@ export default function Navbar() {
         {/* Mobile Menu */}
         {menuOpen && (
           <div className="md:hidden bg-white border-t border-slate-100 px-4 py-4 flex flex-col gap-1">
+
+            {/* [May 13, 2026] REASON: Internal links use Link, external use <a> */}
             {[
               { href: '/shop', label: '🛍️ Shop' },
-              { href: 'https://learn.therealmedico.store', label: '🧠 Learn 3D' }, // NEW: Learn World Bridge (Mobile)
               { href: '/trending', label: '🔥 Trending' },
               { href: '/search', label: '🔍 Search' },
               { href: '/about', label: '👥 About' },
@@ -216,6 +221,16 @@ export default function Navbar() {
                 {item.label}
               </Link>
             ))}
+
+            {/* [May 13, 2026] REASON: External — plain <a> tag required */}
+            <a
+              href="https://learn.therealmedico.store"
+              className="font-medium text-text-dark hover:text-primary hover:bg-accent px-3 py-3 rounded-lg transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              🧠 Learn 3D
+            </a>
+
             <div className="border-t border-slate-100 mt-2 pt-2">
               <div className="flex items-center justify-between px-3 py-3">
                 <span className="font-medium text-text-dark">Currency</span>
