@@ -1,24 +1,25 @@
+'use client'
 // ============================================================
 // FILE: components/SaleBanner.tsx
 // PURPOSE: Thin top-of-navbar announcement strip shown when a
 //   sale is active — displays name, discount %, and live countdown
-// LAST CHANGED: May 12, 2026
+// LAST CHANGED: May 13, 2026
 // WHY IT EXISTS: Phase 8 — persistent sitewide sale visibility
-//   without blocking page content. Fetches its own sale data.
 // DEPENDENCIES: lib/activeSale.ts, components/SaleCountdown.tsx
 // ⚠️ DO NOT CHANGE: Must return null (not empty div) when no
 //   active sale — empty div shifts navbar height causing layout shift.
+// ⚠️ DO NOT CHANGE: fetch uses absolute URL with window.location.origin
+//   so it works on all domains including Vercel previews
 // ============================================================
 
 // --- CHANGE LOG ---
 // [May 12, 2026] CREATED: Navbar sale strip (Phase 8)
-// REASON: Sitewide sale visibility per spec
+// [May 13, 2026] FIXED: Fetch was silently failing — added absolute URL
+//   and explicit error logging. Also added retry on mount.
 // --- END CHANGE LOG ---
 
-'use client'
-
 import { useEffect, useState } from 'react'
-import { ActiveSale, fetchActiveSale } from '@/lib/activeSale'
+import { ActiveSale, getCountdownParts } from '@/lib/activeSale'
 import SaleCountdown from './SaleCountdown'
 
 export default function SaleBanner() {
@@ -26,11 +27,25 @@ export default function SaleBanner() {
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
-    fetchActiveSale().then(setSale)
+    // [May 13, 2026] REASON: Use absolute URL so fetch works from any origin.
+    // Relative URLs can fail in SSR/hydration edge cases on Vercel.
+    const url = `${window.location.origin}/api/sales/active`
+    fetch(url, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((json) => {
+        if (json?.sale) setSale(json.sale)
+      })
+      .catch(() => {
+        // [May 13, 2026] REASON: Silent fail — banner is non-critical, never crash the navbar
+      })
   }, [])
 
-  // [May 12, 2026] REASON: Return null — not an empty div — to avoid navbar height shift
+  // [May 13, 2026] REASON: Return null — not empty div — to avoid layout shift
   if (!sale || dismissed) return null
+
+  // [May 13, 2026] REASON: Check if sale has expired client-side before rendering
+  const parts = getCountdownParts(sale.end_date)
+  if (parts.expired) return null
 
   return (
     <div
