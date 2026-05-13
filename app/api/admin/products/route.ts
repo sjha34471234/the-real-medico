@@ -7,15 +7,17 @@
 // ⚠️ DO NOT CHANGE: Uses service role for Supabase — needed to bypass RLS
 // ⚠️ DO NOT CHANGE: cache: 'no-store' on Printify fetch — admin must always
 //   see fresh data. next: { revalidate } was caching failed responses.
+// ⚠️ DO NOT CHANGE: Both Authorization AND Content-Type headers are required.
+//   Printify returns 400 if Content-Type is missing, even on GET requests.
 // ============================================================
 
 // --- CHANGE LOG ---
 // [May 11, 2026] CREATED: Admin product management (Phase 3)
 // [May 13, 2026] FIXED: Replaced next: { revalidate: 300 } with cache: 'no-store'
-// REASON: Vercel was caching the failed Printify response for 5 minutes.
-//   Every subsequent request got the cached error instead of retrying.
-//   Admin routes must never use revalidate — always fetch fresh.
-// [May 13, 2026] FIXED: Added detailed error logging so real Printify errors surface
+// REASON: Vercel was caching failed Printify responses for 5 minutes.
+// [May 13, 2026] FIXED: Added missing Content-Type: application/json header
+// REASON: Printify returns 400 without it — store route had it, admin route didn't.
+//   This was the root cause of the persistent 400 error.
 // --- END CHANGE LOG ---
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -48,19 +50,19 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // [May 13, 2026] REASON: cache: 'no-store' prevents Vercel from caching
-    // a failed response. With revalidate: 300, one failed fetch would block
-    // all admin product loads for 5 minutes. Admin must always get fresh data.
     const printifyRes = await fetch(
       `https://api.printify.com/v1/shops/${process.env.PRINTIFY_SHOP_ID}/products.json?limit=100`,
       {
-        headers: { Authorization: `Bearer ${process.env.PRINTIFY_API_KEY}` },
+        headers: {
+          Authorization: `Bearer ${process.env.PRINTIFY_API_KEY}`,
+          // [May 13, 2026] REASON: Printify requires Content-Type even on GET requests.
+          // Without it, Printify returns 400. The store route had this — admin route didn't.
+          'Content-Type': 'application/json',
+        },
         cache: 'no-store',
       }
     )
 
-    // [May 13, 2026] REASON: Log the actual Printify status + body so errors
-    // are visible in Vercel function logs instead of a generic 500
     if (!printifyRes.ok) {
       const errorBody = await printifyRes.text()
       console.error(`[admin/products] Printify error ${printifyRes.status}:`, errorBody)
@@ -72,7 +74,6 @@ export async function GET(req: NextRequest) {
 
     const printifyData = await printifyRes.json()
 
-    // [May 13, 2026] REASON: Guard against unexpected Printify response shape
     if (!printifyData?.data || !Array.isArray(printifyData.data)) {
       console.error('[admin/products] Unexpected Printify response shape:', JSON.stringify(printifyData).slice(0, 200))
       return NextResponse.json({ error: 'Unexpected Printify response' }, { status: 500 })
@@ -103,7 +104,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ products, total: products.length })
 
   } catch (err) {
-    // [May 13, 2026] REASON: Log the real error — previously swallowed silently
     console.error('[admin/products] Unexpected error:', err)
     return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 })
   }
