@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const printifyRes = await fetch(
-      `https://api.printify.com/v1/shops/${process.env.PRINTIFY_SHOP_ID}/products.json?limit=100`,
+      `https://api.printify.com/v1/shops/${process.env.PRINTIFY_SHOP_ID}/products.json?limit=20`,
       {
         headers: {
           Authorization: `Bearer ${process.env.PRINTIFY_API_KEY}`,
