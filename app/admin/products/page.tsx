@@ -14,9 +14,8 @@
 // [May 11, 2026] CREATED: Admin product management (Phase 3)
 // [May 13, 2026] FIXED: Added credentials: 'include' to fetch calls
 // REASON: Safari on iPad does not send cookies with fetch unless explicitly told to.
-//   Without this, verifyAdmin() gets no token and returns false, causing 401.
-//   The page catches the error and shows "Failed to load products" even though
-//   Printify and the API are working perfectly.
+// [May 13, 2026] FIXED: Layout — overflow-hidden, gap-2, tighter padding on selector
+// REASON: Right side visibility dropdown was getting cut off on iPad viewport
 // --- END CHANGE LOG ---
 
 'use client'
@@ -62,10 +61,6 @@ export default function AdminProductsPage() {
     setLoading(true)
     setError('')
     try {
-      // [May 13, 2026] REASON: credentials: 'include' required for Safari/iPad.
-      // Without it, the admin_token cookie is not sent and verifyAdmin() returns
-      // false (401), causing the page to show "Failed to load products" even
-      // though Printify and the API route are working correctly.
       const res = await fetch('/api/admin/products', {
         credentials: 'include',
       })
@@ -79,8 +74,6 @@ export default function AdminProductsPage() {
   }
 
   useEffect(() => { fetchProducts() }, [])
-
-  // Reset to page 1 on filter/search change
   useEffect(() => { setPage(1) }, [search, sortBy, filterVisibility, filterCategory])
 
   const categories = useMemo(() => {
@@ -90,7 +83,6 @@ export default function AdminProductsPage() {
 
   const filtered = useMemo(() => {
     let result = [...products]
-
     if (search.trim()) {
       const q = search.toLowerCase()
       result = result.filter(p =>
@@ -99,36 +91,16 @@ export default function AdminProductsPage() {
         p.tags.some(t => t.toLowerCase().includes(q))
       )
     }
-
-    if (filterVisibility !== 'all') {
-      result = result.filter(p => p.visibility === filterVisibility)
-    }
-
-    if (filterCategory !== 'all') {
-      result = result.filter(p => p.category === filterCategory)
-    }
-
+    if (filterVisibility !== 'all') result = result.filter(p => p.visibility === filterVisibility)
+    if (filterCategory !== 'all') result = result.filter(p => p.category === filterCategory)
     switch (sortBy) {
-      case 'newest':
-        result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-        break
-      case 'oldest':
-        result.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
-        break
-      case 'price-high':
-        result.sort((a, b) => b.price - a.price)
-        break
-      case 'price-low':
-        result.sort((a, b) => a.price - b.price)
-        break
-      case 'name-az':
-        result.sort((a, b) => a.title.localeCompare(b.title))
-        break
-      case 'name-za':
-        result.sort((a, b) => b.title.localeCompare(a.title))
-        break
+      case 'newest': result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()); break
+      case 'oldest': result.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()); break
+      case 'price-high': result.sort((a, b) => b.price - a.price); break
+      case 'price-low': result.sort((a, b) => a.price - b.price); break
+      case 'name-az': result.sort((a, b) => a.title.localeCompare(b.title)); break
+      case 'name-za': result.sort((a, b) => b.title.localeCompare(a.title)); break
     }
-
     return result
   }, [products, search, sortBy, filterVisibility, filterCategory])
 
@@ -138,8 +110,6 @@ export default function AdminProductsPage() {
   const updateVisibility = async (productId: string, visibility: Visibility) => {
     setUpdating(productId)
     try {
-      // [May 13, 2026] REASON: credentials: 'include' required here too —
-      // same Safari cookie issue applies to PATCH requests.
       const res = await fetch('/api/admin/products', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -162,6 +132,7 @@ export default function AdminProductsPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-6">
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -204,7 +175,6 @@ export default function AdminProductsPage() {
             className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-primary"
           />
         </div>
-
         <div className="flex flex-wrap gap-3">
           <select
             value={sortBy}
@@ -218,7 +188,6 @@ export default function AdminProductsPage() {
             <option value="name-az">Name: A–Z</option>
             <option value="name-za">Name: Z–A</option>
           </select>
-
           <select
             value={filterCategory}
             onChange={e => setFilterCategory(e.target.value)}
@@ -230,7 +199,6 @@ export default function AdminProductsPage() {
               </option>
             ))}
           </select>
-
           <span className="text-sm text-text-slate self-center ml-auto">
             {filtered.length} product{filtered.length !== 1 ? 's' : ''}
           </span>
@@ -267,37 +235,41 @@ export default function AdminProductsPage() {
           {paginated.map(product => {
             const visOpt = VISIBILITY_OPTIONS.find(v => v.value === product.visibility)!
             return (
-              <div key={product.id} className="card p-4 flex items-center gap-4">
-                <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100">
+              <div key={product.id} className="card p-4 flex items-center gap-2 overflow-hidden">
+
+                {/* Image */}
+                <div className="relative w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100">
                   {product.image && (
                     <Image
                       src={product.image}
                       alt={product.title}
                       fill
-                      sizes="64px"
+                      sizes="56px"
                       className="object-cover"
                     />
                   )}
                 </div>
 
+                {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-text-dark truncate">{product.title}</p>
-                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                  <p className="font-semibold text-text-dark truncate text-sm">{product.title}</p>
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
                     <span className="text-sm text-primary font-bold">${product.price.toFixed(2)}</span>
                     <span className="text-xs text-text-slate">{product.category}</span>
-                    <span className="text-xs text-text-slate">{product.variantCount} variants</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${visOpt.color}`}>
+                    <span className="text-xs text-text-slate">{product.variantCount}v</span>
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${visOpt.color}`}>
                       {visOpt.label}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex-shrink-0">
+                {/* Visibility Selector */}
+                <div className="flex-shrink-0 ml-2">
                   <select
                     value={product.visibility}
                     onChange={e => updateVisibility(product.id, e.target.value as Visibility)}
                     disabled={updating === product.id}
-                    className="text-sm border border-slate-200 rounded-xl px-3 py-2 focus:outline-none focus:border-primary bg-white disabled:opacity-50"
+                    className="text-xs border border-slate-200 rounded-xl px-2 py-2 focus:outline-none focus:border-primary bg-white disabled:opacity-50"
                     aria-label={`Set visibility for ${product.title}`}
                   >
                     {VISIBILITY_OPTIONS.map(opt => (
@@ -305,6 +277,7 @@ export default function AdminProductsPage() {
                     ))}
                   </select>
                 </div>
+
               </div>
             )
           })}
@@ -322,7 +295,6 @@ export default function AdminProductsPage() {
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
-
           {[...Array(totalPages)].map((_, i) => {
             const p = i + 1
             if (p === 1 || p === totalPages || Math.abs(p - page) <= 1) {
@@ -331,21 +303,16 @@ export default function AdminProductsPage() {
                   key={p}
                   onClick={() => setPage(p)}
                   className={`w-9 h-9 rounded-xl text-sm font-medium transition-all ${
-                    page === p
-                      ? 'bg-primary text-white'
-                      : 'border border-slate-200 hover:bg-accent text-text-dark'
+                    page === p ? 'bg-primary text-white' : 'border border-slate-200 hover:bg-accent text-text-dark'
                   }`}
                 >
                   {p}
                 </button>
               )
             }
-            if (Math.abs(p - page) === 2) {
-              return <span key={p} className="text-text-slate">…</span>
-            }
+            if (Math.abs(p - page) === 2) return <span key={p} className="text-text-slate">…</span>
             return null
           })}
-
           <button
             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
@@ -356,6 +323,7 @@ export default function AdminProductsPage() {
           </button>
         </div>
       )}
+
     </div>
   )
 }
