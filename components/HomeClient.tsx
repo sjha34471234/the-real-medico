@@ -1,8 +1,32 @@
+// ============================================================
+// FILE: components/HomeClient.tsx
+// PURPOSE: Homepage client — hero, how it works, featured products, newsletter
+// LAST CHANGED: May 13, 2026
+// WHY IT EXISTS: Client-side interactivity for homepage (newsletter, LCP preload, product cards)
+// DEPENDENCIES: ProductCard, lib/activeSale.ts, supabase auth, cartStore
+// ⚠️ DO NOT CHANGE: LCP preload useEffect — injects <link> into <head> for first product image
+// ⚠️ DO NOT CHANGE: onAuthStateChange pattern for membership check (never getSession on mount)
+// ⚠️ DO NOT CHANGE: fetchActiveSale called ONCE here, not inside each ProductCard
+// ============================================================
+
+// --- CHANGE LOG ---
+// [May 13, 2026] CHANGED: Fetch activeSale + membership status once, pass to all ProductCards
+// REASON: SALES+ system now active — homepage featured products must reflect live discounts
+// --- END CHANGE LOG ---
+
 'use client'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import ProductCard from './ProductCard'
 import toast from 'react-hot-toast'
+import { fetchActiveSale } from '@/lib/activeSale'
+
+// May 13, 2026 REASON: Single instance — not recreated on every render
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 export default function HomeClient({
   featuredProducts,
@@ -13,6 +37,10 @@ export default function HomeClient({
 }) {
   const [email, setEmail] = useState('')
   const [subscribing, setSubscribing] = useState(false)
+
+  // May 13, 2026 REASON: Active sale + membership fetched once here, not per ProductCard
+  const [activeSale, setActiveSale] = useState<any>(null)
+  const [isMember, setIsMember] = useState(false)
 
   // ✅ Injects preload link into <head> so browser fetches LCP image immediately
   useEffect(() => {
@@ -27,6 +55,30 @@ export default function HomeClient({
       document.head.removeChild(link)
     }
   }, [firstImage])
+
+  useEffect(() => {
+    // May 13, 2026 REASON: Fetch active sale once on mount — 60s module-level cache in lib/activeSale
+    fetchActiveSale().then(setActiveSale).catch(() => setActiveSale(null))
+
+    // May 13, 2026 REASON: onAuthStateChange — never getSession on mount (rule #10)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const user = session?.user ?? null
+        if (user) {
+          const { data } = await supabase
+            .from('memberships')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .single()
+          setIsMember(!!data)
+        } else {
+          setIsMember(false)
+        }
+      }
+    )
+    return () => subscription.unsubscribe()
+  }, [])
 
   const handleSubscribe = async () => {
     if (!email.trim()) {
@@ -114,11 +166,14 @@ export default function HomeClient({
           </p>
           {featuredProducts.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* May 13, 2026 REASON: activeSale + isMember passed as props — fetched once above */}
               {featuredProducts.map((product, index) => (
                 <ProductCard
                   key={product.id}
                   product={product}
                   isFirstCard={index < 2}
+                  activeSale={activeSale}
+                  isMember={isMember}
                 />
               ))}
             </div>
