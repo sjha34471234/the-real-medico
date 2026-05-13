@@ -1,16 +1,28 @@
 // ============================================================
 // FILE: app/admin/products/page.tsx
 // PURPOSE: Admin product management — filter, sort, paginate, visibility toggle
-// LAST CHANGED: May 11, 2026
+// LAST CHANGED: May 13, 2026
 // WHY IT EXISTS: Admin needs to manage product visibility and browse all products
 // DEPENDENCIES: /api/admin/products
 // ⚠️ DO NOT CHANGE: 10 products per page — pagination logic depends on this
+// ⚠️ DO NOT CHANGE: credentials: 'include' on ALL fetch calls — required so
+//   the admin_token cookie is sent with requests on Safari/iPad. Without it,
+//   the JWT verify fails and returns 401 which the page treats as a load error.
 // ============================================================
+
+// --- CHANGE LOG ---
+// [May 11, 2026] CREATED: Admin product management (Phase 3)
+// [May 13, 2026] FIXED: Added credentials: 'include' to fetch calls
+// REASON: Safari on iPad does not send cookies with fetch unless explicitly told to.
+//   Without this, verifyAdmin() gets no token and returns false, causing 401.
+//   The page catches the error and shows "Failed to load products" even though
+//   Printify and the API are working perfectly.
+// --- END CHANGE LOG ---
 
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import Image from 'next/image'
-import { Search, SlidersHorizontal, RefreshCw, Eye, EyeOff, Star, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 
 const PRODUCTS_PER_PAGE = 10
 
@@ -50,11 +62,17 @@ export default function AdminProductsPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/admin/products')
-      if (!res.ok) throw new Error('Failed')
+      // [May 13, 2026] REASON: credentials: 'include' required for Safari/iPad.
+      // Without it, the admin_token cookie is not sent and verifyAdmin() returns
+      // false (401), causing the page to show "Failed to load products" even
+      // though Printify and the API route are working correctly.
+      const res = await fetch('/api/admin/products', {
+        credentials: 'include',
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setProducts(data.products || [])
-    } catch {
+    } catch (e: any) {
       setError('Failed to load products. Check Printify connection.')
     }
     setLoading(false)
@@ -120,9 +138,12 @@ export default function AdminProductsPage() {
   const updateVisibility = async (productId: string, visibility: Visibility) => {
     setUpdating(productId)
     try {
+      // [May 13, 2026] REASON: credentials: 'include' required here too —
+      // same Safari cookie issue applies to PATCH requests.
       const res = await fetch('/api/admin/products', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ productId, visibility }),
       })
       if (!res.ok) throw new Error('Failed')
@@ -173,7 +194,6 @@ export default function AdminProductsPage() {
 
       {/* Filters */}
       <div className="card p-4 space-y-3">
-        {/* Search */}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-slate" />
           <input
@@ -186,7 +206,6 @@ export default function AdminProductsPage() {
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {/* Sort */}
           <select
             value={sortBy}
             onChange={e => setSortBy(e.target.value)}
@@ -200,7 +219,6 @@ export default function AdminProductsPage() {
             <option value="name-za">Name: Z–A</option>
           </select>
 
-          {/* Category filter */}
           <select
             value={filterCategory}
             onChange={e => setFilterCategory(e.target.value)}
@@ -250,7 +268,6 @@ export default function AdminProductsPage() {
             const visOpt = VISIBILITY_OPTIONS.find(v => v.value === product.visibility)!
             return (
               <div key={product.id} className="card p-4 flex items-center gap-4">
-                {/* Image */}
                 <div className="relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-slate-100">
                   {product.image && (
                     <Image
@@ -263,7 +280,6 @@ export default function AdminProductsPage() {
                   )}
                 </div>
 
-                {/* Info */}
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-text-dark truncate">{product.title}</p>
                   <div className="flex flex-wrap items-center gap-2 mt-1">
@@ -276,7 +292,6 @@ export default function AdminProductsPage() {
                   </div>
                 </div>
 
-                {/* Visibility Selector */}
                 <div className="flex-shrink-0">
                   <select
                     value={product.visibility}
@@ -310,7 +325,6 @@ export default function AdminProductsPage() {
 
           {[...Array(totalPages)].map((_, i) => {
             const p = i + 1
-            // Show first, last, current, and adjacent pages
             if (p === 1 || p === totalPages || Math.abs(p - page) <= 1) {
               return (
                 <button
