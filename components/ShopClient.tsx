@@ -1,12 +1,63 @@
+// ============================================================
+// FILE: components/ShopClient.tsx
+// PURPOSE: Shop page client — category filter, search, and product grid
+// LAST CHANGED: May 13, 2026
+// WHY IT EXISTS: Client-side filtering/search for the /shop page
+// DEPENDENCIES: ProductCard, lib/activeSale.ts, supabase auth
+// ⚠️ DO NOT CHANGE: fetchActiveSale called ONCE here, not inside each ProductCard
+// ⚠️ DO NOT CHANGE: onAuthStateChange pattern for membership check
+// ============================================================
+
+// --- CHANGE LOG ---
+// [May 13, 2026] CHANGED: Fetch activeSale + membership status once, pass to all ProductCards
+// REASON: Prevents N+1 fetches — was previously fetched per-card which would cause 100+ API calls
+// --- END CHANGE LOG ---
+
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import ProductCard from './ProductCard'
+import { fetchActiveSale } from '@/lib/activeSale'
+
+// May 13, 2026 REASON: Single instance — not recreated on every render
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 const CATEGORIES = ['All', 'tshirts', 'hoodies', 'mugs', 'accessories']
 
 export default function ShopClient({ products }: { products: any[] }) {
   const [activeCategory, setActiveCategory] = useState('All')
   const [search, setSearch] = useState('')
+
+  // May 13, 2026 REASON: Active sale + membership fetched once here, not per ProductCard
+  const [activeSale, setActiveSale] = useState<any>(null)
+  const [isMember, setIsMember] = useState(false)
+
+  useEffect(() => {
+    // May 13, 2026 REASON: Fetch active sale once on mount — 60s module-level cache in lib/activeSale
+    fetchActiveSale().then(setActiveSale).catch(() => setActiveSale(null))
+
+    // May 13, 2026 REASON: onAuthStateChange — never getSession on mount (rule #10)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const user = session?.user ?? null
+        if (user) {
+          const { data } = await supabase
+            .from('memberships')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .single()
+          setIsMember(!!data)
+        } else {
+          setIsMember(false)
+        }
+      }
+    )
+    return () => subscription.unsubscribe()
+  }, [])
 
   const filtered = products.filter(p => {
     const matchCat = activeCategory === 'All' || p.category?.toLowerCase().includes(activeCategory.toLowerCase())
@@ -63,8 +114,15 @@ export default function ShopClient({ products }: { products: any[] }) {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {filtered.map(product => (
-            <ProductCard key={product.id} product={product} />
+          {/* May 13, 2026 REASON: activeSale + isMember passed as props — fetched once above */}
+          {filtered.map((product, index) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              isFirstCard={index === 0}
+              activeSale={activeSale}
+              isMember={isMember}
+            />
           ))}
         </div>
       )}
