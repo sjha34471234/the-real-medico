@@ -1,3 +1,19 @@
+// ============================================================
+// FILE: components/ProductCard.tsx
+// PURPOSE: Displays a product card with wishlist, add-to-cart, and sale/member discounted prices
+// LAST CHANGED: May 13, 2026
+// WHY IT EXISTS: Core product display component used in shop, home, trending, search pages
+// DEPENDENCIES: cartStore, currencyStore, lib/activeSale.ts, supabase auth
+// ⚠️ DO NOT CHANGE: onAuthStateChange pattern (never getUser on mount)
+// ⚠️ DO NOT CHANGE: checkedFor ref — prevents duplicate wishlist DB calls
+// ⚠️ DO NOT CHANGE: Single supabase instance outside component
+// ============================================================
+
+// --- CHANGE LOG ---
+// [May 13, 2026] CHANGED: Added activeSale + isMember props for strikethrough discounted prices
+// REASON: SALES+ system now active — product cards must reflect live discounts
+// --- END CHANGE LOG ---
+
 'use client'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -7,8 +23,13 @@ import toast from 'react-hot-toast'
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { useCurrencyStore } from '@/store/currencyStore'
+import {
+  getEffectiveDiscount,
+  getDiscountedPrice,
+  isProductInSale,
+} from '@/lib/activeSale'
 
-// Single instance — not recreated on every render
+// May 13, 2026 REASON: Single instance — not recreated on every render
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -23,12 +44,17 @@ interface Product {
   description: string
 }
 
+// May 13, 2026 REASON: activeSale + isMember passed from parent (fetched once, not per-card)
 export default function ProductCard({
   product,
   isFirstCard = false,
+  activeSale = null,
+  isMember = false,
 }: {
   product: Product
   isFirstCard?: boolean
+  activeSale?: any | null
+  isMember?: boolean
 }) {
   const addItem = useCartStore((s) => s.addItem)
   const [wishlisted, setWishlisted] = useState(false)
@@ -36,6 +62,27 @@ export default function ProductCard({
   const [currentUser, setCurrentUser] = useState<any>(null)
   const { formatPrice } = useCurrencyStore()
   const checkedFor = useRef<string | null>(null)
+
+  // May 13, 2026 REASON: Compute effective discount once — highest-wins rule (sale vs member 15%)
+  const effectiveDiscount = getEffectiveDiscount(activeSale, isMember, product.id, product.category)
+  const discountedPrice = effectiveDiscount > 0
+    ? getDiscountedPrice(product.price, effectiveDiscount)
+    : null
+  const hasDiscount = discountedPrice !== null && discountedPrice < product.price
+
+  // May 13, 2026 REASON: Badge label — show sale name if sale wins, else "Member" if member wins
+  const saleApplies = activeSale && isProductInSale(activeSale, product.id, product.category)
+  const saleWins = saleApplies && activeSale.discount_percent >= 15
+  const badgeLabel = hasDiscount
+    ? saleWins
+      ? `${activeSale.discount_percent}% OFF`
+      : '15% OFF'
+    : null
+  const badgeColor = hasDiscount
+    ? saleWins && activeSale.color
+      ? activeSale.color  // admin-chosen sale color
+      : '#ef4444'         // red for member discount
+    : null
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -60,7 +107,6 @@ export default function ProductCard({
         }
       }
     )
-
     return () => subscription.unsubscribe()
   }, [product.id])
 
@@ -71,7 +117,8 @@ export default function ProductCard({
       variantId: 'default',
       title: product.title,
       image: product.image,
-      price: product.price,
+      // May 13, 2026 REASON: Add discounted price to cart if discount active
+      price: hasDiscount ? discountedPrice! : product.price,
       size: 'M',
       quantity: 1,
     })
@@ -137,6 +184,16 @@ export default function ProductCard({
           </div>
         </Link>
 
+        {/* May 13, 2026 REASON: Discount badge — only shown when sale or member discount active */}
+        {hasDiscount && badgeLabel && (
+          <div
+            className="absolute top-3 left-3 text-white text-xs font-bold px-2 py-1 rounded-md shadow-md"
+            style={{ backgroundColor: badgeColor! }}
+          >
+            {badgeLabel}
+          </div>
+        )}
+
         <button
           onClick={handleWishlist}
           disabled={wishlistLoading}
@@ -165,10 +222,25 @@ export default function ProductCard({
             {product.title}
           </h3>
         </Link>
+
+        {/* May 13, 2026 REASON: Price display — strikethrough original + discounted price when active */}
         <div className="flex items-center justify-between">
-          <span className="text-primary font-bold text-lg">
-            {formatPrice(product.price)}
-          </span>
+          <div className="flex flex-col">
+            {hasDiscount ? (
+              <>
+                <span className="text-gray-400 line-through text-sm leading-tight">
+                  {formatPrice(product.price)}
+                </span>
+                <span className="text-red-500 font-bold text-lg leading-tight">
+                  {formatPrice(discountedPrice!)}
+                </span>
+              </>
+            ) : (
+              <span className="text-primary font-bold text-lg">
+                {formatPrice(product.price)}
+              </span>
+            )}
+          </div>
           <button
             onClick={handleAddToCart}
             className="text-sm btn-primary py-1.5 px-3"
