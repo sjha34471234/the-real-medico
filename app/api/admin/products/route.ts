@@ -1,11 +1,22 @@
 // ============================================================
 // FILE: app/api/admin/products/route.ts
 // PURPOSE: Fetch all products from Printify + manage visibility settings
-// LAST CHANGED: May 11, 2026
+// LAST CHANGED: May 13, 2026
 // WHY IT EXISTS: Admin needs server-side product list with visibility control
 // DEPENDENCIES: PRINTIFY_API_KEY, PRINTIFY_SHOP_ID, SUPABASE_SERVICE_ROLE_KEY
 // ⚠️ DO NOT CHANGE: Uses service role for Supabase — needed to bypass RLS
+// ⚠️ DO NOT CHANGE: cache: 'no-store' on Printify fetch — admin must always
+//   see fresh data. next: { revalidate } was caching failed responses.
 // ============================================================
+
+// --- CHANGE LOG ---
+// [May 11, 2026] CREATED: Admin product management (Phase 3)
+// [May 13, 2026] FIXED: Replaced next: { revalidate: 300 } with cache: 'no-store'
+// REASON: Vercel was caching the failed Printify response for 5 minutes.
+//   Every subsequent request got the cached error instead of retrying.
+//   Admin routes must never use revalidate — always fetch fresh.
+// [May 13, 2026] FIXED: Added detailed error logging so real Printify errors surface
+// --- END CHANGE LOG ---
 
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
@@ -37,16 +48,35 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Fetch from Printify
+    // [May 13, 2026] REASON: cache: 'no-store' prevents Vercel from caching
+    // a failed response. With revalidate: 300, one failed fetch would block
+    // all admin product loads for 5 minutes. Admin must always get fresh data.
     const printifyRes = await fetch(
       `https://api.printify.com/v1/shops/${process.env.PRINTIFY_SHOP_ID}/products.json?limit=100`,
       {
         headers: { Authorization: `Bearer ${process.env.PRINTIFY_API_KEY}` },
-        next: { revalidate: 300 }, // 5 min cache for admin
+        cache: 'no-store',
       }
     )
-    if (!printifyRes.ok) throw new Error('Printify fetch failed')
+
+    // [May 13, 2026] REASON: Log the actual Printify status + body so errors
+    // are visible in Vercel function logs instead of a generic 500
+    if (!printifyRes.ok) {
+      const errorBody = await printifyRes.text()
+      console.error(`[admin/products] Printify error ${printifyRes.status}:`, errorBody)
+      return NextResponse.json(
+        { error: `Printify API error: ${printifyRes.status}` },
+        { status: 500 }
+      )
+    }
+
     const printifyData = await printifyRes.json()
+
+    // [May 13, 2026] REASON: Guard against unexpected Printify response shape
+    if (!printifyData?.data || !Array.isArray(printifyData.data)) {
+      console.error('[admin/products] Unexpected Printify response shape:', JSON.stringify(printifyData).slice(0, 200))
+      return NextResponse.json({ error: 'Unexpected Printify response' }, { status: 500 })
+    }
 
     // Fetch visibility settings from Supabase
     const supabase = getAdminSupabase()
@@ -67,11 +97,14 @@ export async function GET(req: NextRequest) {
       tags: p.tags || [],
       variantCount: p.variants?.length || 0,
       createdAt: p.created_at || new Date().toISOString(),
-      visibility: visibilityMap[p.id] || 'public', // 'public' | 'members_only' | 'hidden'
+      visibility: visibilityMap[p.id] || 'public',
     }))
 
     return NextResponse.json({ products, total: products.length })
+
   } catch (err) {
+    // [May 13, 2026] REASON: Log the real error — previously swallowed silently
+    console.error('[admin/products] Unexpected error:', err)
     return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 })
   }
 }
@@ -91,7 +124,10 @@ export async function PATCH(req: NextRequest) {
   const supabase = getAdminSupabase()
   const { error } = await supabase
     .from('product_settings')
-    .upsert({ product_id: productId, visibility, updated_at: new Date().toISOString() }, { onConflict: 'product_id' })
+    .upsert(
+      { product_id: productId, visibility, updated_at: new Date().toISOString() },
+      { onConflict: 'product_id' }
+    )
 
   if (error) return NextResponse.json({ error: 'Failed to update' }, { status: 500 })
 
