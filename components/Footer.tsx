@@ -47,18 +47,35 @@ export default function Footer() {
           <h4 className="font-bold mb-4 text-white">Shop</h4>
           <ul className="space-y-2 text-slate-400 text-sm">
             <li><Link href="/shop" className="hover:text-white transition-colors">All Products</Link></li>
-            
-            {/* NEW: Learn World Bridge (Footer) */}
-            <li>
-              <a href="https://learn.therealmedico.store" className="hover:text-white transition-colors flex items-center gap-2">
-                Learn (3D Anatomy) <span className="bg-primary/20 text-primary border border-primary/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full">NEW</span>
-              </a>
-            </li>
-
             <li><Link href="/shop?cat=tshirts" className="hover:text-white transition-colors">T-Shirts</Link></li>
             <li><Link href="/shop?cat=hoodies" className="hover:text-white transition-colors">Hoodies</Link></li>
             <li><Link href="/shop?cat=mugs" className="hover:text-white transition-colors">Mugs</Link></li>
             <li><Link href="/account" className="hover:text-white transition-colors">Real Medico+ ⭐</Link></li>
+          </ul>
+        </div>
+
+        {/* [May 14, 2026] REASON: Ecosystem column linking all three properties */}
+        <div>
+          <h4 className="font-bold mb-4 text-white">Ecosystem</h4>
+          <ul className="space-y-2 text-slate-400 text-sm">
+            <li>
+              <Link href="/" className="hover:text-white transition-colors flex items-center gap-2">
+                🛍️ Store
+                <span className="bg-slate-700 text-slate-300 text-[10px] px-1.5 py-0.5 rounded-full">You are here</span>
+              </Link>
+            </li>
+            <li>
+              <a href="https://learn.therealmedico.store" className="hover:text-white transition-colors flex items-center gap-2">
+                🧠 Learn 3D Anatomy
+                <span className="bg-primary/20 text-primary border border-primary/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full">3D</span>
+              </a>
+            </li>
+            <li>
+              <a href="https://community.therealmedico.store" className="hover:text-white transition-colors flex items-center gap-2">
+                💬 Community Q&A
+                <span className="bg-green-900/40 text-green-400 border border-green-700/30 text-[10px] font-bold px-1.5 py-0.5 rounded-full">New</span>
+              </a>
+            </li>
           </ul>
         </div>
         <div>
