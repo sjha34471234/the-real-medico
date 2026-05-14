@@ -145,7 +145,7 @@ export default function CartPage() {
                             <span className="text-gray-400 line-through text-sm">
                               {formatPrice(item.price)}
                             </span>
-                            <span className="text-red-500 font-bold">
+                            <span className="text-green-600 font-bold">
                               {formatPrice(displayPrice)}
                             </span>
                           </div>
@@ -206,7 +206,7 @@ export default function CartPage() {
             {/* May 14, 2026 REASON: Show saving line when discount active */}
             {hasAnyDiscount && (
               <>
-                <div className="flex justify-between text-red-500 font-medium">
+                <div className="flex justify-between text-green-600 font-medium">
                   <span>
                     {isMember && (!sale || sale.discount_percent < 15)
                       ? '⭐ Member Discount (15%)'
@@ -218,7 +218,7 @@ export default function CartPage() {
                 </div>
                 <div className="flex justify-between text-text-slate">
                   <span>Discounted Subtotal</span>
-                  <span className="text-red-500 font-bold">{formatPrice(finalTotal)}</span>
+                  <span className="text-green-600 font-bold">{formatPrice(finalTotal)}</span>
                 </div>
               </>
             )}
