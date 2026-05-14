@@ -140,7 +140,7 @@ export default function Navbar() {
             </Link>
 
             {/* [May 13, 2026] REASON: External URL — must use <a> not <Link> */}
-            
+            <a
               href="https://learn.therealmedico.store"
               className="text-sm text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
             >
@@ -148,7 +148,7 @@ export default function Navbar() {
             </a>
 
             {/* [May 14, 2026] REASON: Community micro-frontend link */}
-            
+            <a
               href="https://community.therealmedico.store"
               className="text-sm text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
             >
