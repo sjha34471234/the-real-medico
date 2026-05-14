@@ -1,0 +1,24 @@
+# robots.txt — therealmedico.store
+# Last updated: May 14, 2026
+
+User-agent: *
+Allow: /
+
+# Block admin and API routes from all crawlers
+Disallow: /admin/
+Disallow: /api/
+Disallow: /checkout/
+Disallow: /order-success/
+Disallow: /account/
+
+# Allow shop, product pages, and public content
+Allow: /shop/
+Allow: /trending/
+Allow: /about/
+Allow: /contact/
+Allow: /faq/
+Allow: /shipping/
+Allow: /search/
+
+# Sitemap
+Sitemap: https://therealmedico.store/sitemap.xml
