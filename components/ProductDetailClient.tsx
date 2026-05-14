@@ -109,22 +109,24 @@ export default function ProductDetailClient({ product }: { product: any }) {
   const hasDiscount = discountedPrice !== null && discountedPrice < currentPrice
 
   // May 13, 2026 REASON: Badge — sale name wins if sale discount >= member 15%
+  // May 14, 2026 FIX: Always show the actual effectiveDiscount% in badge.
+  // Bug: saleWins = sale.discount_percent >= 15 was false for a 10% sale,
+  // so badge fell through to "15% OFF / Member Discount" for ALL users
+  // including logged-out visitors who have no membership.
+  // Fix: label = effectiveDiscount%. "Member Discount" subtitle ONLY when
+  // isMember=true AND member 15% actually beat the sale discount.
   const saleApplies = activeSale && isProductInSale(activeSale, product.id, product.category)
-  const saleWins = saleApplies && activeSale.discount_percent >= 15
-  const badgeLabel = hasDiscount
-    ? saleWins
-      ? `${activeSale.discount_percent}% OFF`
-      : '15% OFF'
-    : null
+  const saleDiscount = saleApplies ? activeSale.discount_percent : 0
+  const memberWon = isMember && 15 > saleDiscount
+  const badgeLabel = hasDiscount ? `${effectiveDiscount}% OFF` : null
   const badgeBg = hasDiscount
-    ? saleWins && activeSale.color
-      ? activeSale.color
-      : '#ef4444'
+    ? memberWon
+      ? '#ef4444'
+      : activeSale?.color || '#ef4444'
     : null
-  // May 13, 2026 REASON: Show sale name in badge subtitle when sale is active
-  const badgeSub = hasDiscount && saleWins && activeSale.name
+  const badgeSub = hasDiscount && saleApplies && !memberWon && activeSale.name
     ? activeSale.name
-    : hasDiscount && !saleWins
+    : hasDiscount && memberWon
     ? 'Member Discount'
     : null
 
