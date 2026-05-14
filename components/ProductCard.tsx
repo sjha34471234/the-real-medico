@@ -70,18 +70,20 @@ export default function ProductCard({
     : null
   const hasDiscount = discountedPrice !== null && discountedPrice < product.price
 
-  // May 13, 2026 REASON: Badge label — show sale name if sale wins, else "Member" if member wins
+  // May 14, 2026 FIX: Badge label — show the ACTUAL effective discount percent.
+  // Previous logic: saleWins = sale.discount_percent >= 15, else show "15% OFF"
+  // Bug: when sale is 10% and user is NOT a member, saleWins=false so badge showed
+  // "15% OFF / Member Discount" even though isMember=false and discount was from sale.
+  // Fix: always show effectiveDiscount% in label. Show member label only if isMember
+  // actually won (isMember=true AND memberDiscount > saleDiscount).
   const saleApplies = activeSale && isProductInSale(activeSale, product.id, product.category)
-  const saleWins = saleApplies && activeSale.discount_percent >= 15
-  const badgeLabel = hasDiscount
-    ? saleWins
-      ? `${activeSale.discount_percent}% OFF`
-      : '15% OFF'
-    : null
+  const saleDiscount = saleApplies ? activeSale.discount_percent : 0
+  const memberWon = isMember && 15 > saleDiscount  // member discount only wins if higher
+  const badgeLabel = hasDiscount ? `${effectiveDiscount}% OFF` : null
   const badgeColor = hasDiscount
-    ? saleWins && activeSale.color
-      ? activeSale.color  // admin-chosen sale color
-      : '#ef4444'         // red for member discount
+    ? memberWon
+      ? '#ef4444'        // red for member discount
+      : activeSale?.color || '#ef4444'  // sale color
     : null
 
   useEffect(() => {
