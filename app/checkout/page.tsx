@@ -167,29 +167,8 @@ export default function CheckoutPage() {
           return
         }
 
-        // May 14, 2026 REASON: Fetch saved addresses after login — show in Step 2 for auto-fill
-        const { data: addrs } = await supabase
-          .from('addresses')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('is_default', { ascending: false })
-        if (addrs && addrs.length > 0) {
-          setSavedAddresses(addrs)
-          // Pre-select default address and fill form
-          const def = addrs.find((a: any) => a.is_default) || addrs[0]
-          setSelectedAddressId(def.id)
-          setForm(prev => ({
-            ...prev,
-            name: def.name || prev.name,
-            email: def.email || prev.email,
-            phone: def.phone || prev.phone,
-            address: def.address,
-            city: def.city,
-            state: def.state || '',
-            zip: def.zip,
-            country: def.country || 'India',
-          }))
-        }
+        // May 14, 2026 REASON: Address fetch moved to separate useEffect below
+        // so it runs immediately when currentUser state updates
 
         // May 14, 2026 FIX: query by user_id not email; boolean 'active' not status text
         // Previous: .eq('email', session.user.email) — wrong, use user_id
@@ -221,6 +200,42 @@ export default function CheckoutPage() {
     )
     return () => subscription.unsubscribe()
   }, [])
+
+  // May 14, 2026 REASON: Separate useEffect for address fetch — runs immediately
+  // when currentUser state updates, not buried inside onAuthStateChange async chain.
+  // This ensures addresses appear on Step 1 load for already-logged-in users.
+  useEffect(() => {
+    if (!currentUser) {
+      setSavedAddresses([])
+      setSelectedAddressId(null)
+      return
+    }
+    const fetchAddresses = async () => {
+      const { data: addrs } = await supabase
+        .from('addresses')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('is_default', { ascending: false })
+      if (addrs && addrs.length > 0) {
+        setSavedAddresses(addrs)
+        // Pre-select default and auto-fill form
+        const def = addrs.find((a: any) => a.is_default) || addrs[0]
+        setSelectedAddressId(def.id)
+        setForm(prev => ({
+          ...prev,
+          name: def.name || prev.name,
+          email: def.email || prev.email,
+          phone: def.phone || prev.phone,
+          address: def.address,
+          city: def.city,
+          state: def.state || '',
+          zip: def.zip,
+          country: def.country || 'India',
+        }))
+      }
+    }
+    fetchAddresses()
+  }, [currentUser])
 
   const update = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -396,6 +411,64 @@ export default function CheckoutPage() {
           {step === 1 && (
             <div className="card p-6 space-y-4">
               <h2 className="text-xl font-bold">Contact Information</h2>
+
+              {/* May 14, 2026 REASON: Show saved addresses in Step 1 too — auto-fills all fields */}
+              {savedAddresses.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-text-dark">Use a saved address</p>
+                  <div className="space-y-2">
+                    {savedAddresses.map((addr: any) => (
+                      <button
+                        key={addr.id}
+                        onClick={() => {
+                          setSelectedAddressId(addr.id)
+                          setForm(prev => ({
+                            ...prev,
+                            name: addr.name || prev.name,
+                            email: addr.email || prev.email,
+                            phone: addr.phone || prev.phone,
+                            address: addr.address,
+                            city: addr.city,
+                            state: addr.state || '',
+                            zip: addr.zip,
+                            country: addr.country || 'India',
+                          }))
+                        }}
+                        className={`w-full text-left p-3 rounded-xl border-2 transition-all text-sm ${
+                          selectedAddressId === addr.id
+                            ? 'border-primary bg-primary/5'
+                            : 'border-slate-200 hover:border-primary'
+                        }`}
+                      >
+                        <p className="font-semibold text-text-dark flex items-center gap-2">
+                          {addr.name}
+                          {addr.is_default && (
+                            <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded-full">Default</span>
+                          )}
+                        </p>
+                        <p className="text-text-slate text-xs mt-0.5">
+                          {addr.phone} · {addr.address}, {addr.city}{addr.state ? `, ${addr.state}` : ''} — {addr.zip}, {addr.country}
+                        </p>
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => {
+                        setSelectedAddressId(null)
+                        setForm({ name: '', email: '', phone: '', address: '', city: '', state: '', zip: '', country: 'India' })
+                      }}
+                      className={`w-full text-left p-3 rounded-xl border-2 transition-all text-sm ${
+                        selectedAddressId === null
+                          ? 'border-primary bg-primary/5'
+                          : 'border-slate-200 hover:border-primary'
+                      }`}
+                    >
+                      <p className="font-semibold text-primary">+ Enter a new address</p>
+                    </button>
+                  </div>
+                  <div className="border-t pt-1 mt-1" />
+                </div>
+              )}
+
               <div>
                 <label className="text-sm font-medium text-text-slate mb-1 block">Full Name *</label>
                 <input name="name" placeholder="Dr. John Smith" value={form.name} onChange={update} className="input-field" />
