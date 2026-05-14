@@ -74,17 +74,26 @@ export default function ProductDetailClient({ product }: { product: any }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const user = session?.user ?? null
-        if (user) {
-          const { data } = await supabase
-            .from('memberships')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('status', 'active')
-            .single()
-          setIsMember(!!data)
-        } else {
+
+        if (!user) {
+          // May 14, 2026 REASON: Explicit reset — must set false here, not rely on initial state
+          // Without this, a logged-out user could inherit isMember=true from a previous auth event
           setIsMember(false)
+          return
         }
+
+        // May 14, 2026 FIX: maybeSingle() returns null when no row exists (no error thrown)
+        // .single() was throwing PGRST116 "no rows" error which was being silently swallowed,
+        // leaving isMember unchanged (true) from a previous render cycle
+        const { data, error } = await supabase
+          .from('memberships')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .maybeSingle()
+
+        // May 14, 2026 REASON: Explicit false on error or no row — never assume membership
+        setIsMember(!error && !!data)
       }
     )
     return () => subscription.unsubscribe()
