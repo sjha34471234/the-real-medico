@@ -30,6 +30,7 @@ import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { useCurrencyStore, CURRENCY_CONFIG } from '@/store/currencyStore'
 import CurrencySelector from '@/components/CurrencySelector'
+import Script from 'next/script'
 import {
   fetchActiveSale,
   ActiveSale,
@@ -126,6 +127,14 @@ function MembershipFOMOBanner({ onDismiss, savings }: { onDismiss: () => void; s
           Cancel anytime. Joins 100s of healthcare professionals already saving.
         </p>
       </div>
+      {/* May 15, 2026 REASON: Razorpay loaded here not layout.tsx
+          layout.tsx uses header-based isCheckout detection which can fail on Vercel
+          if x-next-url header is empty → script never loads → window.Razorpay undefined → payment fails
+          Loading here guarantees it loads exactly when checkout page mounts */}
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="afterInteractive"
+      />
     </div>
   )
 }
@@ -726,6 +735,14 @@ export default function CheckoutPage() {
           )}
         </div>
       </div>
+      {/* May 15, 2026 REASON: Razorpay loaded here not layout.tsx
+          layout.tsx uses header-based isCheckout detection which can fail on Vercel
+          if x-next-url header is empty → script never loads → window.Razorpay undefined → payment fails
+          Loading here guarantees it loads exactly when checkout page mounts */}
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        strategy="afterInteractive"
+      />
     </div>
   )
 }
