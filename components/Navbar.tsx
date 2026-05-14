@@ -134,37 +134,37 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-6">
-            <Link href="/shop" className="text-text-dark hover:text-primary font-medium transition-colors">
+          <div className="hidden md:flex items-center gap-4">
+            <Link href="/shop" className="text-sm text-text-dark hover:text-primary font-medium transition-colors">
               Shop
             </Link>
 
             {/* [May 13, 2026] REASON: External URL — must use <a> not <Link> */}
-            <a
+            
               href="https://learn.therealmedico.store"
-              className="text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
+              className="text-sm text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
             >
-              Learn <span className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase">3D</span>
+              Learn <span className="bg-primary text-white text-[10px] font-bold px-1 py-0.5 rounded-full uppercase">3D</span>
             </a>
 
             {/* [May 14, 2026] REASON: Community micro-frontend link */}
-            <a
+            
               href="https://community.therealmedico.store"
-              className="text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
+              className="text-sm text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
             >
-              Community <span className="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase">New</span>
+              Community <span className="bg-green-600 text-white text-[10px] font-bold px-1 py-0.5 rounded-full uppercase">New</span>
             </a>
 
-            <Link href="/trending" className="text-text-dark hover:text-primary font-medium transition-colors">
+            <Link href="/trending" className="text-sm text-text-dark hover:text-primary font-medium transition-colors">
               🔥 Trending
             </Link>
-            <Link href="/about" className="text-text-dark hover:text-primary font-medium transition-colors">
+            <Link href="/about" className="text-sm text-text-dark hover:text-primary font-medium transition-colors">
               About
             </Link>
-            <Link href="/contact" className="text-text-dark hover:text-primary font-medium transition-colors">
+            <Link href="/contact" className="text-sm text-text-dark hover:text-primary font-medium transition-colors">
               Contact
             </Link>
-            <Link href="/faq" className="text-text-dark hover:text-primary font-medium transition-colors">
+            <Link href="/faq" className="text-sm text-text-dark hover:text-primary font-medium transition-colors">
               FAQ
             </Link>
           </div>
