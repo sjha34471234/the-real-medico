@@ -1,15 +1,20 @@
 /*
  * ============================================================
- * CHANGE LOG — May 11, 2026
+ * CHANGE LOG
  * ============================================================
  * May 10 2026: Removed Google Fonts — fonts self-hosted
  * May 10 2026: Razorpay moved to lazyOnload
  * May 11 2026: Font preloads added — fixes 1,054ms chain delay
  * May 11 2026: Admin Navbar/Footer suppression added
  * May 11 2026: Fixed admin detection — x-next-url works on all domains
+ * May 15 2026: Razorpay removed from layout — moved to checkout/page.tsx
+ *   REASON: isCheckout relied on x-next-url header which returns empty on
+ *   some Vercel deployments → script never loaded → window.Razorpay undefined
+ *   → payment threw "Something went wrong". checkout/page.tsx now loads it
+ *   directly via <Script strategy="afterInteractive"> — guaranteed to load.
  *
  * ⚠️ DO NOT remove font preload links — fixes 1,054ms chain delay
- * ⚠️ DO NOT move Razorpay back to all pages
+ * ⚠️ DO NOT add Razorpay back here — it lives in app/checkout/page.tsx now
  * ⚠️ DO NOT remove isAdmin check — admin has its own sidebar layout
  * ⚠️ crossOrigin="anonymous" REQUIRED on font preloads
  * ============================================================
@@ -77,11 +82,7 @@ export default function RootLayout({
     pathname = rawUrl
   }
 
-  // [May 11, 2026] Only /checkout needs Razorpay — 236 KiB waste on other pages
-  const isCheckout = pathname === '/checkout'
-
   // [May 11, 2026] Admin has own sidebar layout — store nav must NOT render there
-  // Uses string match as reliable fallback if header is empty
   const isAdmin = pathname.startsWith('/admin')
 
   return (
@@ -133,12 +134,8 @@ export default function RootLayout({
         {!isAdmin && <Footer />}
         <Toaster position="bottom-right" />
 
-        {isCheckout && (
-          <Script
-            src="https://checkout.razorpay.com/v1/checkout.js"
-            strategy="lazyOnload"
-          />
-        )}
+        {/* May 15, 2026: Razorpay removed from here — now lives in app/checkout/page.tsx
+            isCheckout detection via headers was unreliable on Vercel — script was not loading */}
 
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-N68DENGZD2"
