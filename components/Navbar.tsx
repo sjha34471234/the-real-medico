@@ -147,6 +147,14 @@ export default function Navbar() {
               Learn <span className="bg-primary text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase">3D</span>
             </a>
 
+            {/* [May 14, 2026] REASON: Community micro-frontend link */}
+            
+              href="https://community.therealmedico.store"
+              className="text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
+            >
+              Community <span className="bg-green-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full uppercase">New</span>
+            </a>
+
             <Link href="/trending" className="text-text-dark hover:text-primary font-medium transition-colors">
               🔥 Trending
             </Link>
@@ -223,12 +231,21 @@ export default function Navbar() {
             ))}
 
             {/* [May 13, 2026] REASON: External — plain <a> tag required */}
-            <a
+            
               href="https://learn.therealmedico.store"
               className="font-medium text-text-dark hover:text-primary hover:bg-accent px-3 py-3 rounded-lg transition-colors"
               onClick={() => setMenuOpen(false)}
             >
               🧠 Learn 3D
+            </a>
+
+            {/* [May 14, 2026] REASON: Community micro-frontend link */}
+            
+              href="https://community.therealmedico.store"
+              className="font-medium text-text-dark hover:text-primary hover:bg-accent px-3 py-3 rounded-lg transition-colors"
+              onClick={() => setMenuOpen(false)}
+            >
+              💬 Community
             </a>
 
             <div className="border-t border-slate-100 mt-2 pt-2">
