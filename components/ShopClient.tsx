@@ -43,17 +43,23 @@ export default function ShopClient({ products }: { products: any[] }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const user = session?.user ?? null
-        if (user) {
-          const { data } = await supabase
-            .from('memberships')
-            .select('id')
-            .eq('user_id', user.id)
-            .eq('status', 'active')
-            .single()
-          setIsMember(!!data)
-        } else {
+
+        if (!user) {
+          // May 14, 2026 REASON: Explicit reset — never rely on initial state across auth events
           setIsMember(false)
+          return
         }
+
+        // May 14, 2026 FIX: maybeSingle() returns null on no row — .single() threw PGRST116
+        // silently leaving isMember true for non-members
+        const { data, error } = await supabase
+          .from('memberships')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('status', 'active')
+          .maybeSingle()
+
+        setIsMember(!error && !!data)
       }
     )
     return () => subscription.unsubscribe()
