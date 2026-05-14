@@ -148,7 +148,7 @@ export default function Navbar() {
             </a>
 
             {/* [May 14, 2026] REASON: Community micro-frontend link */}
-            
+            <a
               href="https://community.therealmedico.store"
               className="text-text-dark hover:text-primary font-medium transition-colors flex items-center gap-1"
             >
@@ -231,7 +231,7 @@ export default function Navbar() {
             ))}
 
             {/* [May 13, 2026] REASON: External — plain <a> tag required */}
-            
+            <a
               href="https://learn.therealmedico.store"
               className="font-medium text-text-dark hover:text-primary hover:bg-accent px-3 py-3 rounded-lg transition-colors"
               onClick={() => setMenuOpen(false)}
@@ -240,7 +240,7 @@ export default function Navbar() {
             </a>
 
             {/* [May 14, 2026] REASON: Community micro-frontend link */}
-            
+            <a
               href="https://community.therealmedico.store"
               className="font-medium text-text-dark hover:text-primary hover:bg-accent px-3 py-3 rounded-lg transition-colors"
               onClick={() => setMenuOpen(false)}
