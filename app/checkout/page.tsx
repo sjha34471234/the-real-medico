@@ -140,6 +140,8 @@ export default function CheckoutPage() {
   const [hasOrderedBefore, setHasOrderedBefore] = useState(false)
   // May 14, 2026 REASON: Active sale fetched here for discount calculation
   const [activeSale, setActiveSale] = useState<ActiveSale | null>(null)
+  // May 14, 2026 REASON: Login required before payment — track auth user
+  const [currentUser, setCurrentUser] = useState<any>(null)
   const [form, setForm] = useState({
     name: '', email: '', phone: '',
     address: '', city: '', state: '', zip: '', country: 'India',
@@ -154,6 +156,7 @@ export default function CheckoutPage() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const user = session?.user ?? null
+        setCurrentUser(user)  // May 14, 2026 REASON: Track for login gate at payment step
 
         if (!user) {
           setIsMember(false)
@@ -205,6 +208,13 @@ export default function CheckoutPage() {
     if (!form.address.trim()) { toast.error('Please enter your street address'); return }
     if (!form.city.trim()) { toast.error('Please enter your city'); return }
     if (!form.zip.trim()) { toast.error('Please enter your ZIP/PIN code'); return }
+    // May 14, 2026 REASON: Login required before payment step
+    // Redirect to account page with return URL so user comes back after login
+    if (!currentUser) {
+      toast.error('Please log in to continue to payment')
+      window.location.href = '/account?redirect=/checkout'
+      return
+    }
     setStep(3)
   }
 
@@ -416,6 +426,16 @@ export default function CheckoutPage() {
                   <option>Other</option>
                 </select>
               </div>
+              {/* May 14, 2026 REASON: Warn non-logged-in users before they hit the login gate */}
+              {!currentUser && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex items-center gap-2 text-sm">
+                  <span>🔒</span>
+                  <span className="text-yellow-800">
+                    You'll need to <strong>log in</strong> before payment.{' '}
+                    <Link href="/account" className="text-primary underline">Log in now</Link> to save time.
+                  </span>
+                </div>
+              )}
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setStep(1)} className="btn-secondary flex-1">← Back</button>
                 <button onClick={goToStep3} className="btn-primary flex-1">Continue to Payment →</button>
@@ -518,7 +538,7 @@ export default function CheckoutPage() {
             </div>
             {effectiveDiscountPercent > 0 && discountLabel && (
               <div className="flex justify-between text-sm font-medium"
-                style={{ color: memberWon ? '#16a34a' : '#dc2626' }}>
+                style={{ color: '#16a34a' }}>  {/* May 14 2026: always green per design rule */}
                 <span>{discountLabel}</span>
                 <span>−{formatPrice(savingsUSD)}</span>
               </div>
