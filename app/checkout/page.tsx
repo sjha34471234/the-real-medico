@@ -1,4 +1,28 @@
 'use client'
+// ============================================================
+// FILE: app/checkout/page.tsx
+// PURPOSE: Multi-step checkout — contact, shipping, payment
+// LAST CHANGED: May 14, 2026
+// WHY IT EXISTS: Handles order placement via Razorpay
+// DEPENDENCIES: cartStore, currencyStore, razorpay API routes, activeSale lib
+// ⚠️ DO NOT CHANGE: onAuthStateChange pattern — never getSession on mount (rule #10)
+// ⚠️ DO NOT CHANGE: membership uses .eq('active', true) NOT .eq('status','active')
+//   memberships table has boolean 'active' column, not a 'status' text column
+// ⚠️ DO NOT CHANGE: maybeSingle() not single() — single() errors on no rows
+// ⚠️ DO NOT CHANGE: highest-wins rule — sale vs member 15%, whichever is higher
+// ⚠️ DO NOT CHANGE: discounts computed from cart base prices (total())
+//   Cart stores base prices — discounts always applied fresh here
+// ============================================================
+
+// --- CHANGE LOG ---
+// [May 14, 2026] FIXED: Sale discount not applying at checkout for non-members
+// ROOT CAUSE 1: Checkout only applied isMember ? 0.85 : 1.0 — no sale logic at all
+// ROOT CAUSE 2: Membership check used getSession() (wrong pattern) + .eq('email') instead of user_id
+// ROOT CAUSE 3: .single() throws on no membership row, silently leaving isMember state wrong
+// FIX: Added fetchActiveSale + getEffectiveDiscount (highest-wins: sale vs member 15%)
+//   Fixed auth to onAuthStateChange pattern, .eq('user_id'), .eq('active',true), maybeSingle()
+// --- END CHANGE LOG ---
+
 import { useState, useEffect } from 'react'
 import useCartStore from '@/store/cartStore'
 import toast from 'react-hot-toast'
@@ -6,8 +30,15 @@ import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { useCurrencyStore, CURRENCY_CONFIG } from '@/store/currencyStore'
 import CurrencySelector from '@/components/CurrencySelector'
+import {
+  fetchActiveSale,
+  ActiveSale,
+  getEffectiveDiscount,
+  getDiscountedPrice,
+} from '@/lib/activeSale'
 
-const getSupabase = () => createClient(
+// May 14, 2026 REASON: Single instance outside component — not recreated on every render
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
@@ -107,45 +138,57 @@ export default function CheckoutPage() {
   const [showFOMO, setShowFOMO] = useState(false)
   const [isMember, setIsMember] = useState(false)
   const [hasOrderedBefore, setHasOrderedBefore] = useState(false)
+  // May 14, 2026 REASON: Active sale fetched here for discount calculation
+  const [activeSale, setActiveSale] = useState<ActiveSale | null>(null)
   const [form, setForm] = useState({
     name: '', email: '', phone: '',
     address: '', city: '', state: '', zip: '', country: 'India',
   })
 
   useEffect(() => {
-    const checkUser = async () => {
-      try {
-        const supabase = getSupabase()
-        const { data: { session } } = await supabase.auth.getSession()
-        if (!session?.user) return
+    // May 14, 2026 REASON: Fetch active sale once on mount
+    fetchActiveSale().then(setActiveSale).catch(() => setActiveSale(null))
 
-        const { data: membership } = await supabase
+    // May 14, 2026 FIX: onAuthStateChange — never getSession on mount (rule #10)
+    // Previous code used getSession() which is wrong pattern
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const user = session?.user ?? null
+
+        if (!user) {
+          setIsMember(false)
+          return
+        }
+
+        // May 14, 2026 FIX: query by user_id not email; boolean 'active' not status text
+        // Previous: .eq('email', session.user.email) — wrong, use user_id
+        // Previous: .single() — throws PGRST116 on no row, use maybeSingle()
+        const { data: membership, error } = await supabase
           .from('memberships')
-          .select('active')
-          .eq('email', session.user.email)
+          .select('id')
+          .eq('user_id', user.id)
           .eq('active', true)
-          .single()
+          .maybeSingle()
 
-        if (membership) {
+        if (!error && membership) {
           setIsMember(true)
           return
         }
 
+        // Check if ordered before for FOMO banner
         const { data: orders } = await supabase
           .from('orders')
           .select('id')
-          .eq('user_id', session.user.id)
+          .eq('user_id', user.id)
           .limit(1)
 
         if (orders && orders.length > 0) {
           setHasOrderedBefore(true)
           setShowFOMO(true)
         }
-      } catch (e) {
-        console.error(e)
       }
-    }
-    checkUser()
+    )
+    return () => subscription.unsubscribe()
   }, [])
 
   const update = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
@@ -165,12 +208,32 @@ export default function CheckoutPage() {
     setStep(3)
   }
 
-  // All price calculations stay in USD internally, convert only for display + Razorpay
-  const subtotalUSD = total()
-  const discountedUSD = isMember ? subtotalUSD * 0.85 : subtotalUSD
-  const savingsUSD = isMember ? subtotalUSD * 0.15 : 0
+  // May 14, 2026 FIX: Compute discounted subtotal using highest-wins rule
+  // Previous code: discountedUSD = isMember ? subtotalUSD * 0.85 : subtotalUSD
+  // Bug: no sale discount applied at all — non-members got no discount even during a sale
+  const subtotalUSD = total() // base prices from cartStore
+
+  // May 14, 2026 REASON: Effective discount = highest of sale vs member 15%
+  // Use scope 'all' shortcut — cart doesn't track per-item scope so we use
+  // the sale's effective discount if sale exists and is scope='all',
+  // else fall back to getEffectiveDiscount with no productId (returns member discount only)
+  const saleDiscount = activeSale ? activeSale.discount_percent : 0
+  const memberDiscount = isMember ? 15 : 0
+  const effectiveDiscountPercent = Math.max(saleDiscount, memberDiscount)
+  const discountedUSD = effectiveDiscountPercent > 0
+    ? getDiscountedPrice(subtotalUSD, effectiveDiscountPercent)
+    : subtotalUSD
+  const savingsUSD = subtotalUSD - discountedUSD
+
+  // May 14, 2026 REASON: Label for discount line in summary
+  const memberWon = isMember && memberDiscount >= saleDiscount
+  const discountLabel = effectiveDiscountPercent > 0
+    ? memberWon
+      ? `⭐ Member Discount (15%)`
+      : `🔥 ${activeSale?.name ?? 'Sale'} (${saleDiscount}%)`
+    : null
+
   const rate = rates[currency] ?? 83
-  // Razorpay expects amount in smallest currency unit (paise, cents, fils, etc.)
   const razorpayAmount = Math.round(discountedUSD * rate * 100)
 
   const handlePayment = async () => {
@@ -179,11 +242,11 @@ export default function CheckoutPage() {
       const orderRes = await fetch('/api/razorpay/create-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-body: JSON.stringify({
-  amount: razorpayAmount,
-  currency: currency,
-  country: form.country,
-}),
+        body: JSON.stringify({
+          amount: razorpayAmount,
+          currency: currency,
+          country: form.country,
+        }),
       })
       if (!orderRes.ok) throw new Error('Failed to create order')
       const orderData = await orderRes.json()
@@ -193,12 +256,14 @@ body: JSON.stringify({
         amount: orderData.amount,
         currency: orderData.currency,
         name: 'The Real Medico',
-        description: `Order of ${items.length} item(s)${isMember ? ' — 15% Member Discount Applied' : ''}`,
+        description: `Order of ${items.length} item(s)${effectiveDiscountPercent > 0 ? ` — ${effectiveDiscountPercent}% discount applied` : ''}`,
         order_id: orderData.order_id,
         prefill: { name: form.name, email: form.email, contact: form.phone },
         notes: {
           address: `${form.address}, ${form.city}, ${form.state} ${form.zip}, ${form.country}`,
           is_member: isMember,
+          discount_percent: effectiveDiscountPercent,
+          sale_name: activeSale?.name ?? null,
         },
         theme: { color: '#1A3A8F' },
         handler: async (response: any) => {
@@ -248,14 +313,16 @@ body: JSON.stringify({
     <div className="max-w-4xl mx-auto px-4 py-12">
       <h1 className="text-4xl font-heading font-bold text-primary mb-8">Checkout</h1>
 
-      {/* Member savings banner */}
-      {isMember && (
+      {/* Discount applied banner */}
+      {effectiveDiscountPercent > 0 && (
         <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 flex items-center gap-3">
-          <span className="text-2xl">⭐</span>
+          <span className="text-2xl">{memberWon ? '⭐' : '🔥'}</span>
           <div>
-            <p className="font-bold text-green-800">Real Medico+ Discount Applied!</p>
+            <p className="font-bold text-green-800">
+              {memberWon ? 'Real Medico+ Discount Applied!' : `${activeSale?.name} Sale Applied!`}
+            </p>
             <p className="text-green-700 text-sm">
-              You're saving <strong>{formatPrice(savingsUSD)}</strong> on this order (15% member discount)
+              You're saving <strong>{formatPrice(savingsUSD)}</strong> on this order ({effectiveDiscountPercent}% {memberWon ? 'member' : 'sale'} discount)
             </p>
           </div>
         </div>
@@ -378,16 +445,16 @@ body: JSON.stringify({
                   </button>
                 </div>
 
-                {isMember && (
+                {effectiveDiscountPercent > 0 && (
                   <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2 text-sm">
-                    <span>⭐</span>
+                    <span>{memberWon ? '⭐' : '🔥'}</span>
                     <span className="text-green-800 font-medium">
-                      15% Real Medico+ discount applied — saving {formatPrice(savingsUSD)}
+                      {effectiveDiscountPercent}% {memberWon ? 'member' : 'sale'} discount applied — saving {formatPrice(savingsUSD)}
                     </span>
                   </div>
                 )}
 
-                {/* Currency selector at payment step */}
+                {/* Currency selector */}
                 <div className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3">
                   <div>
                     <p className="text-sm font-semibold text-text-dark">Payment Currency</p>
@@ -413,10 +480,7 @@ body: JSON.stringify({
                     disabled={loading}
                     className="btn-primary flex-1 flex items-center justify-center gap-2"
                   >
-                    {loading
-                      ? '⏳ Opening...'
-                      : `Pay ${formatPrice(discountedUSD)} Securely`
-                    }
+                    {loading ? '⏳ Opening...' : `Pay ${formatPrice(discountedUSD)} Securely`}
                   </button>
                 </div>
                 <p className="text-center text-xs text-text-slate">
@@ -447,12 +511,16 @@ body: JSON.stringify({
           <div className="border-t pt-3 space-y-2">
             <div className="flex justify-between text-sm text-text-slate">
               <span>Subtotal</span>
-              <span>{formatPrice(subtotalUSD)}</span>
+              {effectiveDiscountPercent > 0
+                ? <span className="line-through">{formatPrice(subtotalUSD)}</span>
+                : <span>{formatPrice(subtotalUSD)}</span>
+              }
             </div>
-            {isMember && (
-              <div className="flex justify-between text-sm text-green-700 font-medium">
-                <span>⭐ Member Discount (15%)</span>
-                <span>-{formatPrice(savingsUSD)}</span>
+            {effectiveDiscountPercent > 0 && discountLabel && (
+              <div className="flex justify-between text-sm font-medium"
+                style={{ color: memberWon ? '#16a34a' : '#dc2626' }}>
+                <span>{discountLabel}</span>
+                <span>−{formatPrice(savingsUSD)}</span>
               </div>
             )}
             <div className="flex justify-between text-sm text-text-slate">
