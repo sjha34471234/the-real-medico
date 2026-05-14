@@ -120,11 +120,8 @@ export default function ProductDetailClient({ product }: { product: any }) {
   const saleDiscount = saleApplies ? activeSale.discount_percent : 0
   const memberWon = isMember && 15 > saleDiscount
   const badgeLabel = hasDiscount ? `${effectiveDiscount}% OFF` : null
-  const badgeBg = hasDiscount
-    ? memberWon
-      ? '#ef4444'
-      : activeSale?.color || '#ef4444'
-    : null
+  // May 14, 2026: always green per design rule — no red, no admin sale color
+  const badgeBg = hasDiscount ? '#16a34a' : null
   const badgeSub = hasDiscount && saleApplies && !memberWon && activeSale.name
     ? activeSale.name
     : hasDiscount && memberWon
@@ -206,7 +203,7 @@ export default function ProductDetailClient({ product }: { product: any }) {
                   <p className="text-gray-400 line-through text-lg leading-tight">
                     {formatPrice(currentPrice)}
                   </p>
-                  <p className="text-3xl font-bold text-red-500 leading-tight">
+                  <p className="text-3xl font-bold text-green-600 leading-tight">
                     {formatPrice(discountedPrice!)}
                   </p>
                 </div>
