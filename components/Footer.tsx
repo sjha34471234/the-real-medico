@@ -20,7 +20,7 @@ export default function Footer() {
 
   return (
     <footer className="bg-text-dark text-white pt-12 pb-6 px-4">
-      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
+      <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-5 gap-8 mb-8">
         <div className="md:col-span-2">
           <h3 className="text-xl font-heading font-black text-white mb-3">
             The Real Medico
