@@ -1,13 +1,22 @@
 // ============================================================
 // FILE: components/SearchClient.tsx
 // PURPOSE: Search UI + logs queries to search_logs via /api/search/log
-// LAST CHANGED: May 11, 2026
+// LAST CHANGED: May 14, 2026
 // WHY IT EXISTS: Customer search with analytics logging
-// DEPENDENCIES: /api/search/log, Printify products (passed as props)
+// DEPENDENCIES: /api/search/log, Printify products (passed as props), lib/activeSale.ts
 // ⚠️ DO NOT CHANGE: logSearch is fire-and-forget — never awaited, never blocks UX
 // ⚠️ DO NOT CHANGE: 800ms debounce on logging — prevents logging every keystroke
 // ⚠️ DO NOT CHANGE: searchParams must NOT use Promise<> — Next.js 14 syntax
+// ⚠️ DO NOT CHANGE: fetchActiveSale called ONCE here, not inside each ProductCard
+// ⚠️ DO NOT CHANGE: membership uses .eq('active', true) NOT .eq('status', 'active')
+//   memberships table has boolean 'active' column, not a 'status' text column
 // ============================================================
+
+// --- CHANGE LOG ---
+// [May 14, 2026] CHANGED: Fetch activeSale + membership once, pass to all ProductCards
+// REASON: Search results were showing full prices with no discount badges
+// because ProductCards received no activeSale/isMember props
+// --- END CHANGE LOG ---
 
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
@@ -15,6 +24,7 @@ import { useRouter } from 'next/navigation'
 import ProductCard from './ProductCard'
 import { Search, SlidersHorizontal, X } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
+import { fetchActiveSale } from '@/lib/activeSale'
 
 const SORT_OPTIONS = [
   { value: 'relevance', label: '⭐ Relevance' },
@@ -28,7 +38,6 @@ const SORT_OPTIONS = [
 const CATEGORIES = ['all', 'tshirts', 'hoodies', 'mugs', 'accessories', 'stickers']
 
 // [May 11, 2026] REASON: Stable session ID for this browser session
-// Used to group searches from same session in analytics
 const SESSION_ID = typeof window !== 'undefined'
   ? (sessionStorage.getItem('trm_sid') || (() => {
       const id = Math.random().toString(36).slice(2)
@@ -36,6 +45,12 @@ const SESSION_ID = typeof window !== 'undefined'
       return id
     })())
   : null
+
+// May 14, 2026 REASON: Single supabase instance — not recreated on every render
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 interface Product {
   id: string
@@ -66,10 +81,40 @@ export default function SearchClient({ products, initialQuery, initialSort, init
   const [priceRange, setPriceRange] = useState({ min: '', max: '' })
   const [results, setResults] = useState<Product[]>([])
 
+  // May 14, 2026 REASON: Active sale + membership fetched once here, not per ProductCard
+  const [activeSale, setActiveSale] = useState<any>(null)
+  const [isMember, setIsMember] = useState(false)
+
   // [May 11, 2026] REASON: debounce timer ref — logs search 800ms after user stops typing
   const logDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // [May 11, 2026] REASON: track last logged query to avoid duplicate logs
   const lastLoggedRef = useRef<string>('')
+
+  useEffect(() => {
+    // May 14, 2026 REASON: Fetch active sale once on mount — 60s module-level cache
+    fetchActiveSale().then(setActiveSale).catch(() => setActiveSale(null))
+
+    // May 14, 2026 REASON: onAuthStateChange — never getSession on mount (rule #10)
+    // May 14, 2026 FIX: memberships table uses boolean 'active' column not 'status' text
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        const user = session?.user ?? null
+        if (!user) {
+          setIsMember(false)
+          return
+        }
+        const { data, error } = await supabase
+          .from('memberships')
+          .select('id')
+          .eq('user_id', user.id)
+          // May 14, 2026 FIX: boolean 'active' column — NOT .eq('status', 'active')
+          .eq('active', true)
+          .maybeSingle()
+        setIsMember(!error && !!data)
+      }
+    )
+    return () => subscription.unsubscribe()
+  }, [])
 
   const filterAndSort = useCallback(() => {
     let filtered = [...products]
@@ -117,17 +162,10 @@ export default function SearchClient({ products, initialQuery, initialSort, init
     const count = filterAndSort()
 
     // [May 11, 2026] REASON: Log search with 800ms debounce — fire-and-forget
-    // Only logs when user pauses typing, prevents logging every keystroke
-    // Never awaited — never blocks the search UI
     if (query.trim().length >= 2 && query.trim() !== lastLoggedRef.current) {
       if (logDebounceRef.current) clearTimeout(logDebounceRef.current)
       logDebounceRef.current = setTimeout(() => {
         lastLoggedRef.current = query.trim()
-        // Get user ID if available (fire-and-forget, no await)
-        const supabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        )
         supabase.auth.getSession().then(({ data }) => {
           fetch('/api/search/log', {
             method: 'POST',
@@ -138,7 +176,7 @@ export default function SearchClient({ products, initialQuery, initialSort, init
               sessionId: SESSION_ID,
               userId: data.session?.user?.id || null,
             }),
-          }).catch(() => {}) // Silent fail — never interrupt search
+          }).catch(() => {})
         })
       }, 800)
     }
@@ -255,8 +293,14 @@ export default function SearchClient({ products, initialQuery, initialSort, init
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* May 14, 2026 REASON: activeSale + isMember passed as props — fetched once above */}
           {results.map(product => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard
+              key={product.id}
+              product={product}
+              activeSale={activeSale}
+              isMember={isMember}
+            />
           ))}
         </div>
       )}
