@@ -89,7 +89,8 @@ export default function ProductDetailClient({ product }: { product: any }) {
           .from('memberships')
           .select('id')
           .eq('user_id', user.id)
-          .eq('status', 'active')
+          // May 14 2026 FIX: memberships table uses boolean 'active' column, NOT 'status' text column
+          .eq('active', true)
           .maybeSingle()
 
         // May 14, 2026 REASON: Explicit false on error or no row — never assume membership
