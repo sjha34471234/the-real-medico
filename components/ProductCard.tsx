@@ -81,9 +81,7 @@ export default function ProductCard({
   const memberWon = isMember && 15 > saleDiscount  // member discount only wins if higher
   const badgeLabel = hasDiscount ? `${effectiveDiscount}% OFF` : null
   const badgeColor = hasDiscount
-    ? memberWon
-      ? '#ef4444'        // red for member discount
-      : activeSale?.color || '#ef4444'  // sale color
+    ? '#16a34a'  // May 14 2026: always green per design rule
     : null
 
   useEffect(() => {
@@ -233,7 +231,7 @@ export default function ProductCard({
                 <span className="text-gray-400 line-through text-sm leading-tight">
                   {formatPrice(product.price)}
                 </span>
-                <span className="text-red-500 font-bold text-lg leading-tight">
+                <span className="text-green-600 font-bold text-lg leading-tight">
                   {formatPrice(discountedPrice!)}
                 </span>
               </>
