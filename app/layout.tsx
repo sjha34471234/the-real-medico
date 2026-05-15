@@ -1,5 +1,9 @@
 /*
  * ============================================================
+ * FILE: app/layout.tsx
+ * PURPOSE: Root layout — Navbar, Footer, fonts, analytics, currency sync
+ * LAST CHANGED: May 15, 2026
+ * ============================================================
  * CHANGE LOG
  * ============================================================
  * May 10 2026: Removed Google Fonts — fonts self-hosted
@@ -12,11 +16,17 @@
  *   some Vercel deployments → script never loaded → window.Razorpay undefined
  *   → payment threw "Something went wrong". checkout/page.tsx now loads it
  *   directly via <Script strategy="afterInteractive"> — guaranteed to load.
+ * May 15 2026: Added CurrencySyncTrigger client component
+ *   REASON: Currency rates need to be synced from open.er-api.com and stored
+ *   as peak rates in Supabase (ratchet rule: prices only go up, never down).
+ *   Trigger fires once per hour max — gated server-side by updated_at timestamp.
+ *   Fire-and-forget: never blocks render, never shows errors to user.
  *
  * ⚠️ DO NOT remove font preload links — fixes 1,054ms chain delay
  * ⚠️ DO NOT add Razorpay back here — it lives in app/checkout/page.tsx now
  * ⚠️ DO NOT remove isAdmin check — admin has its own sidebar layout
  * ⚠️ crossOrigin="anonymous" REQUIRED on font preloads
+ * ⚠️ DO NOT remove CurrencySyncTrigger — it keeps peak rates current sitewide
  * ============================================================
  */
 
@@ -27,6 +37,7 @@ import Footer from '@/components/Footer'
 import { Toaster } from 'react-hot-toast'
 import Script from 'next/script'
 import { headers } from 'next/headers'
+import CurrencySyncTrigger from '@/components/CurrencySyncTrigger'
 
 export const metadata: Metadata = {
   title: 'The Real Medico — Medical Merchandise Store',
@@ -67,8 +78,8 @@ export default function RootLayout({
 }) {
   const headersList = headers()
 
-  // [May 11, 2026] REASON: x-next-url is the most reliable header across Vercel
-  // preview URLs, custom domains, and local dev. Falls back through multiple options.
+  // [May 11, 2026] REASON: x-next-url is most reliable across Vercel preview URLs,
+  // custom domains, and local dev. Falls back through multiple options.
   const rawUrl =
     headersList.get('x-next-url') ||
     headersList.get('x-invoke-path') ||
@@ -134,8 +145,18 @@ export default function RootLayout({
         {!isAdmin && <Footer />}
         <Toaster position="bottom-right" />
 
+        {/*
+          May 15, 2026: Silent currency sync — DO NOT REMOVE
+          Fires /api/currency/sync in the background on every page load.
+          Server gates it to once per hour via updated_at check — no hammering.
+          Keeps peak rates current so prices reflect the ratcheted maximum.
+          Never blocks render. Never shows errors to users.
+          Excluded on admin pages — no need to sync on every admin action.
+        */}
+        {!isAdmin && <CurrencySyncTrigger />}
+
         {/* May 15, 2026: Razorpay removed from here — now lives in app/checkout/page.tsx
-            isCheckout detection via headers was unreliable on Vercel — script was not loading */}
+            isCheckout detection via headers was unreliable on Vercel */}
 
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-N68DENGZD2"
