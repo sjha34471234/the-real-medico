@@ -2,7 +2,7 @@
 // ============================================================
 // FILE: app/checkout/page.tsx
 // PURPOSE: Multi-step checkout — contact, shipping, payment
-// LAST CHANGED: May 14, 2026
+// LAST CHANGED: May 15, 2026
 // WHY IT EXISTS: Handles order placement via Razorpay
 // DEPENDENCIES: cartStore, currencyStore, razorpay API routes, activeSale lib
 // ⚠️ DO NOT CHANGE: onAuthStateChange pattern — never getSession on mount (rule #10)
@@ -12,6 +12,9 @@
 // ⚠️ DO NOT CHANGE: highest-wins rule — sale vs member 15%, whichever is higher
 // ⚠️ DO NOT CHANGE: discounts computed from cart base prices (total())
 //   Cart stores base prices — discounts always applied fresh here
+// ⚠️ DO NOT CHANGE: handlePayment calls validate-discount FIRST to get signed token.
+//   create-order only accepts validationToken — never a raw amount.
+//   This is the tamper-prevention system. Do not bypass it.
 // ============================================================
 
 // --- CHANGE LOG ---
@@ -21,9 +24,16 @@
 // ROOT CAUSE 3: .single() throws on no membership row, silently leaving isMember state wrong
 // FIX: Added fetchActiveSale + getEffectiveDiscount (highest-wins: sale vs member 15%)
 //   Fixed auth to onAuthStateChange pattern, .eq('user_id'), .eq('active',true), maybeSingle()
+// [May 15, 2026] ADDED: Server-side discount enforcement via validate-discount route
+// REASON: Client was computing razorpayAmount itself — anyone with DevTools could set
+//   amount=100 (1 paise) and get a real Razorpay order for almost nothing.
+// FIX: handlePayment now calls /api/razorpay/validate-discount first (sends cart items +
+//   Supabase access token). Server re-computes correct amount, returns HMAC-signed token.
+//   That token is passed to create-order — which uses ONLY the token's amount.
+//   Client-side display values (effectiveDiscountPercent, discountedUSD) are kept for UI only.
 // --- END CHANGE LOG ---
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import useCartStore from '@/store/cartStore'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
@@ -34,7 +44,6 @@ import Script from 'next/script'
 import {
   fetchActiveSale,
   ActiveSale,
-  getEffectiveDiscount,
   getDiscountedPrice,
 } from '@/lib/activeSale'
 
@@ -127,14 +136,6 @@ function MembershipFOMOBanner({ onDismiss, savings }: { onDismiss: () => void; s
           Cancel anytime. Joins 100s of healthcare professionals already saving.
         </p>
       </div>
-      {/* May 15, 2026 REASON: Razorpay loaded here not layout.tsx
-          layout.tsx uses header-based isCheckout detection which can fail on Vercel
-          if x-next-url header is empty → script never loads → window.Razorpay undefined → payment fails
-          Loading here guarantees it loads exactly when checkout page mounts */}
-      <Script
-        src="https://checkout.razorpay.com/v1/checkout.js"
-        strategy="afterInteractive"
-      />
     </div>
   )
 }
@@ -147,10 +148,13 @@ export default function CheckoutPage() {
   const [showFOMO, setShowFOMO] = useState(false)
   const [isMember, setIsMember] = useState(false)
   const [hasOrderedBefore, setHasOrderedBefore] = useState(false)
-  // May 14, 2026 REASON: Active sale fetched here for discount calculation
+  // May 14, 2026 REASON: Active sale fetched here for UI discount display
   const [activeSale, setActiveSale] = useState<ActiveSale | null>(null)
   // May 14, 2026 REASON: Login required before payment — track auth user
   const [currentUser, setCurrentUser] = useState<any>(null)
+  // May 15, 2026 REASON: Store access token to send to validate-discount
+  //   validate-discount uses it to verify membership server-side
+  const accessTokenRef = useRef<string | null>(null)
   // May 14, 2026 REASON: Saved addresses fetched after login for auto-fill
   const [savedAddresses, setSavedAddresses] = useState<any[]>([])
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
@@ -160,15 +164,18 @@ export default function CheckoutPage() {
   })
 
   useEffect(() => {
-    // May 14, 2026 REASON: Fetch active sale once on mount
+    // May 14, 2026 REASON: Fetch active sale once on mount for UI display
+    // NOTE: This is client-side display only — server re-validates in validate-discount
     fetchActiveSale().then(setActiveSale).catch(() => setActiveSale(null))
 
     // May 14, 2026 FIX: onAuthStateChange — never getSession on mount (rule #10)
-    // Previous code used getSession() which is wrong pattern
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         const user = session?.user ?? null
-        setCurrentUser(user)  // May 14, 2026 REASON: Track for login gate at payment step
+        setCurrentUser(user)
+
+        // May 15, 2026 REASON: Store access token for validate-discount Authorization header
+        accessTokenRef.current = session?.access_token ?? null
 
         if (!user) {
           setIsMember(false)
@@ -176,12 +183,7 @@ export default function CheckoutPage() {
           return
         }
 
-        // May 14, 2026 REASON: Address fetch moved to separate useEffect below
-        // so it runs immediately when currentUser state updates
-
         // May 14, 2026 FIX: query by user_id not email; boolean 'active' not status text
-        // Previous: .eq('email', session.user.email) — wrong, use user_id
-        // Previous: .single() — throws PGRST116 on no row, use maybeSingle()
         const { data: membership, error } = await supabase
           .from('memberships')
           .select('id')
@@ -194,7 +196,6 @@ export default function CheckoutPage() {
           return
         }
 
-        // Check if ordered before for FOMO banner
         const { data: orders } = await supabase
           .from('orders')
           .select('id')
@@ -212,7 +213,6 @@ export default function CheckoutPage() {
 
   // May 14, 2026 REASON: Separate useEffect for address fetch — runs immediately
   // when currentUser state updates, not buried inside onAuthStateChange async chain.
-  // This ensures addresses appear on Step 1 load for already-logged-in users.
   useEffect(() => {
     if (!currentUser) {
       setSavedAddresses([])
@@ -227,7 +227,6 @@ export default function CheckoutPage() {
         .order('is_default', { ascending: false })
       if (addrs && addrs.length > 0) {
         setSavedAddresses(addrs)
-        // Pre-select default and auto-fill form
         const def = addrs.find((a: any) => a.is_default) || addrs[0]
         setSelectedAddressId(def.id)
         setForm(prev => ({
@@ -260,8 +259,6 @@ export default function CheckoutPage() {
     if (!form.address.trim()) { toast.error('Please enter your street address'); return }
     if (!form.city.trim()) { toast.error('Please enter your city'); return }
     if (!form.zip.trim()) { toast.error('Please enter your ZIP/PIN code'); return }
-    // May 14, 2026 REASON: Login required before payment step
-    // Redirect to account page with return URL so user comes back after login
     if (!currentUser) {
       toast.error('Please log in to continue to payment')
       window.location.href = '/account?redirect=/checkout'
@@ -270,15 +267,11 @@ export default function CheckoutPage() {
     setStep(3)
   }
 
-  // May 14, 2026 FIX: Compute discounted subtotal using highest-wins rule
-  // Previous code: discountedUSD = isMember ? subtotalUSD * 0.85 : subtotalUSD
-  // Bug: no sale discount applied at all — non-members got no discount even during a sale
-  const subtotalUSD = total() // base prices from cartStore
-
-  // May 14, 2026 REASON: Effective discount = highest of sale vs member 15%
-  // Use scope 'all' shortcut — cart doesn't track per-item scope so we use
-  // the sale's effective discount if sale exists and is scope='all',
-  // else fall back to getEffectiveDiscount with no productId (returns member discount only)
+  // ── UI-only discount calculation (for display — NOT what gets charged) ───────
+  // May 15, 2026 REASON: These values are for showing the user what they'll pay.
+  //   The actual charged amount is computed server-side in validate-discount.
+  //   Do not use these to construct the Razorpay order amount.
+  const subtotalUSD = total()
   const saleDiscount = activeSale ? activeSale.discount_percent : 0
   const memberDiscount = isMember ? 15 : 0
   const effectiveDiscountPercent = Math.max(saleDiscount, memberDiscount)
@@ -287,7 +280,6 @@ export default function CheckoutPage() {
     : subtotalUSD
   const savingsUSD = subtotalUSD - discountedUSD
 
-  // May 14, 2026 REASON: Label for discount line in summary
   const memberWon = isMember && memberDiscount >= saleDiscount
   const discountLabel = effectiveDiscountPercent > 0
     ? memberWon
@@ -295,22 +287,73 @@ export default function CheckoutPage() {
       : `🔥 ${activeSale?.name ?? 'Sale'} (${saleDiscount}%)`
     : null
 
+  // May 15, 2026 REASON: Display rate for UI only — Razorpay amount comes from server token
   const rate = rates[currency] ?? 83
-  const razorpayAmount = Math.round(discountedUSD * rate * 100)
 
+  // ── Payment handler with server-side validation ───────────────────────────
   const handlePayment = async () => {
     setLoading(true)
     try {
-      const orderRes = await fetch('/api/razorpay/create-order', {
+      // May 15, 2026 REASON: Step 1 — call validate-discount server-side.
+      //   Server re-computes the correct amount from scratch:
+      //   fetches sale from DB, verifies membership via access token,
+      //   applies highest-wins rule per item, adds shipping.
+      //   Returns HMAC-signed token containing the validated amount.
+      const validateRes = await fetch('/api/razorpay/validate-discount', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          // May 15, 2026 REASON: Server uses this to verify membership.
+          //   accessTokenRef holds the Supabase JWT from onAuthStateChange.
+          //   Without it server can't confirm membership and will not apply member discount.
+          ...(accessTokenRef.current
+            ? { Authorization: `Bearer ${accessTokenRef.current}` }
+            : {}),
+        },
         body: JSON.stringify({
-          amount: razorpayAmount,
-          currency: currency,
+          items: items.map(item => ({
+            id: item.id,
+            title: item.title,
+            price: item.price,   // base USD — pre-discount
+            quantity: item.quantity,
+            size: item.size,
+            image: item.image,
+          })),
+          currency,
           country: form.country,
         }),
       })
-      if (!orderRes.ok) throw new Error('Failed to create order')
+
+      if (!validateRes.ok) {
+        const errData = await validateRes.json().catch(() => ({}))
+        // May 15, 2026 REASON: Token expiry gives a user-friendly message
+        if (validateRes.status === 400 && errData.error?.includes('expired')) {
+          toast.error('Your session timed out. Please refresh and try again.')
+        } else {
+          toast.error(errData.error ?? 'Could not validate order. Please try again.')
+        }
+        setLoading(false)
+        return
+      }
+
+      const validateData = await validateRes.json()
+      const { validationToken, savingsUSD: serverSavingsUSD, saleName: serverSaleName } = validateData
+
+      // May 15, 2026 REASON: Step 2 — pass only the validationToken to create-order.
+      //   create-order reads the amount from the token — client cannot influence it.
+      const orderRes = await fetch('/api/razorpay/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ validationToken }),
+      })
+
+      if (!orderRes.ok) {
+        const errData = await orderRes.json().catch(() => ({}))
+        toast.error(errData.error ?? 'Failed to create order. Please try again.')
+        setLoading(false)
+        return
+      }
+
       const orderData = await orderRes.json()
 
       const options = {
@@ -323,9 +366,11 @@ export default function CheckoutPage() {
         prefill: { name: form.name, email: form.email, contact: form.phone },
         notes: {
           address: `${form.address}, ${form.city}, ${form.state} ${form.zip}, ${form.country}`,
-          is_member: isMember,
-          discount_percent: effectiveDiscountPercent,
-          sale_name: activeSale?.name ?? null,
+          // May 15, 2026 REASON: Use server-confirmed values in notes, not client estimates
+          is_member: String(orderData.isMember ?? isMember),
+          discount_percent: String(effectiveDiscountPercent),
+          sale_name: orderData.saleName ?? activeSale?.name ?? null,
+          savings_usd: String(serverSavingsUSD ?? savingsUSD),
         },
         theme: { color: '#1A3A8F' },
         handler: async (response: any) => {
@@ -421,7 +466,6 @@ export default function CheckoutPage() {
             <div className="card p-6 space-y-4">
               <h2 className="text-xl font-bold">Contact Information</h2>
 
-              {/* May 14, 2026 REASON: Show saved addresses in Step 1 too — auto-fills all fields */}
               {savedAddresses.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-text-dark">Use a saved address</p>
@@ -501,7 +545,6 @@ export default function CheckoutPage() {
             <div className="card p-6 space-y-4">
               <h2 className="text-xl font-bold">Shipping Address</h2>
 
-              {/* May 14, 2026 REASON: Saved address selector — auto-fills form on select */}
               {savedAddresses.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-text-dark">Saved Addresses</p>
@@ -586,15 +629,17 @@ export default function CheckoutPage() {
                   <option>Australia</option>
                   <option>Germany</option>
                   <option>France</option>
+                  <option>Netherlands</option>
+                  <option>Italy</option>
+                  <option>Spain</option>
                   <option>UAE</option>
                   <option>Singapore</option>
+                  <option>Malaysia</option>
                   <option>New Zealand</option>
                   <option>South Africa</option>
-                  <option>Malaysia</option>
                   <option>Other</option>
                 </select>
               </div>
-              {/* May 14, 2026 REASON: Warn non-logged-in users before they hit the login gate */}
               {!currentUser && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 flex items-center gap-2 text-sm">
                   <span>🔒</span>
@@ -668,9 +713,17 @@ export default function CheckoutPage() {
                     disabled={loading}
                     className="btn-primary flex-1 flex items-center justify-center gap-2"
                   >
-                    {loading ? '⏳ Opening...' : `Pay ${formatPrice(discountedUSD)} Securely`}
+                    {loading ? '⏳ Verifying...' : `Pay ${formatPrice(discountedUSD)} Securely`}
                   </button>
                 </div>
+
+                {/* May 15, 2026 REASON: Reassure user the brief "Verifying..." pause is normal */}
+                {loading && (
+                  <p className="text-center text-xs text-text-slate">
+                    Verifying your discount server-side — this takes just a second…
+                  </p>
+                )}
+
                 <p className="text-center text-xs text-text-slate">
                   🌍 International cards accepted · Paying in {CURRENCY_CONFIG[currency].label}
                 </p>
@@ -706,7 +759,7 @@ export default function CheckoutPage() {
             </div>
             {effectiveDiscountPercent > 0 && discountLabel && (
               <div className="flex justify-between text-sm font-medium"
-                style={{ color: '#16a34a' }}>  {/* May 14 2026: always green per design rule */}
+                style={{ color: '#16a34a' }}>
                 <span>{discountLabel}</span>
                 <span>−{formatPrice(savingsUSD)}</span>
               </div>
@@ -735,6 +788,7 @@ export default function CheckoutPage() {
           )}
         </div>
       </div>
+
       {/* May 15, 2026 REASON: Razorpay loaded here not layout.tsx
           layout.tsx uses header-based isCheckout detection which can fail on Vercel
           if x-next-url header is empty → script never loads → window.Razorpay undefined → payment fails
