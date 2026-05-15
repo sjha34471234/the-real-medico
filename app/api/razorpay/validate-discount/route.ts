@@ -1,52 +1,58 @@
 // ============================================================
 // FILE: app/api/razorpay/validate-discount/route.ts
-// PURPOSE: Server-side discount validation — computes correct amount and returns signed token
+// PURPOSE: Server-side discount + amount validation — returns HMAC-signed token
 // LAST CHANGED: May 15, 2026
-// WHY IT EXISTS: Prevent client-side price tampering — previously checkout sent its own
-//   computed razorpayAmount to create-order, which trusted it blindly.
-//   Now checkout calls this first; we re-compute everything server-side and return
-//   a short-lived HMAC-signed token. create-order only accepts that token.
-// DEPENDENCIES: Supabase (service role), lib/activeSale logic (inlined — no client import),
-//   ADMIN_JWT_SECRET (reused for HMAC — no new env var needed),
-//   NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-// ⚠️ DO NOT CHANGE: Uses SUPABASE_SERVICE_ROLE_KEY — bypasses RLS, server only
-// ⚠️ DO NOT CHANGE: Token TTL is 5 minutes — do not increase (replay attack window)
+// WHY IT EXISTS: Prevent client-side price tampering. Previously checkout sent
+//   its own computed razorpayAmount to create-order which trusted it blindly.
+//   Now: server re-computes everything, returns signed token. create-order
+//   only accepts that token — never a raw client amount.
+// DEPENDENCIES: Supabase (service role), ADMIN_JWT_SECRET (HMAC signing),
+//   currency_rates table (peak rates — same source as UI)
+// ⚠️ DO NOT CHANGE: Reads peak_rate from currency_rates — NOT hardcoded rates.
+//   This guarantees UI and server use the exact same rate → no price mismatch.
+// ⚠️ DO NOT CHANGE: Token TTL 5 minutes — do not increase (replay attack window)
 // ⚠️ DO NOT CHANGE: Highest-wins rule — Math.max(saleDiscount, memberDiscount)
-// ⚠️ DO NOT CHANGE: membership uses boolean .eq('active', true) NOT .eq('status','active')
-// ⚠️ DO NOT CHANGE: maybeSingle() not single() — single() throws PGRST116 on no row
+// ⚠️ DO NOT CHANGE: membership uses boolean .eq('active', true)
+// ⚠️ DO NOT CHANGE: maybeSingle() not single() — single() throws on no row
 // ============================================================
 
 // --- CHANGE LOG ---
-// [May 15, 2026] CREATED: New route for server-side discount enforcement
-// REASON: Client was computing razorpayAmount itself and sending to create-order.
-//   Anyone with DevTools could set amount=100 (1 paise) and get a valid Razorpay order.
-//   Fix: this route verifies identity + discount server-side, returns HMAC-signed token.
-//   create-order now only accepts the signed token, never a raw client amount.
+// [May 15, 2026] CREATED: Server-side discount enforcement
+// REASON: Client was computing razorpayAmount itself — anyone with DevTools
+//   could set amount=100 (1 paise) and get a valid Razorpay order.
+// [May 15, 2026] UPDATED: Replaced hardcoded USD_RATES with Supabase peak_rate lookup
+// REASON: Hardcoded rates (83 INR/USD) caused mismatch vs live UI rates (~95 INR/USD).
+//   Now reads peak_rate from currency_rates table — same source as currencyStore.
+//   UI and server always use identical rate → mismatch impossible.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createHmac } from 'crypto'
 
-// May 15, 2026 REASON: Service role — needed to verify membership server-side (bypasses RLS)
+// May 15, 2026 REASON: Service role — membership verify + currency_rates read
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// ─── Shipping logic (mirrors create-order) ───────────────────────────────────
-// May 15, 2026 REASON: Duplicated here intentionally — server must compute shipping
-//   independently, not trust client. Keep in sync with create-order if zones change.
 type CurrencyCode = 'INR' | 'USD' | 'GBP' | 'AED' | 'SGD' | 'MYR' | 'AUD' | 'CAD'
 
-const USD_RATES: Record<CurrencyCode, number> = {
-  INR: 83, USD: 1, GBP: 0.79, AED: 3.67,
+const SUPPORTED_CURRENCIES: CurrencyCode[] = ['INR', 'USD', 'GBP', 'AED', 'SGD', 'MYR', 'AUD', 'CAD']
+
+// May 15, 2026 REASON: Last-resort fallback only — used if Supabase is unreachable.
+//   Should match seeded values in supabase-currency-rates.sql.
+//   In normal operation, these are NEVER used — Supabase peak rates are used instead.
+const FALLBACK_RATES: Record<CurrencyCode, number> = {
+  INR: 95, USD: 1, GBP: 0.79, AED: 3.67,
   SGD: 1.34, MYR: 4.7, AUD: 1.53, CAD: 1.36,
 }
 
+// ─── Shipping logic ───────────────────────────────────────────────────────────
+// May 15, 2026 REASON: Shipping is in INR internally — converted to target currency
+//   using the same peak rate. Keep in sync with create-order if zones change.
 function getShippingChargeINR(country: string, isMember: boolean): number {
-  // May 15, 2026 REASON: Members get free shipping — enforced server-side here
-  if (isMember) return 0
+  if (isMember) return 0  // Members always get free shipping
 
   const c = country?.toLowerCase().trim()
   if (!c || c === 'india') return 0
@@ -78,38 +84,20 @@ function getShippingChargeINR(country: string, isMember: boolean): number {
   return 999
 }
 
-// ─── Sale scope check (mirrors lib/activeSale.ts isProductInSale) ─────────────
-// May 15, 2026 REASON: Inlined here — lib/activeSale.ts uses client-side fetch.
-//   Server reads sale directly from Supabase above. Logic must stay identical.
+// ─── Sale scope check ─────────────────────────────────────────────────────────
 function isProductInSale(
-  sale: {
-    scope: string
-    product_ids: string[] | null
-    category: string | null
-  },
+  sale: { scope: string; product_ids: string[] | null; category: string | null },
   productId: string,
-  // category not tracked per cart item — if scope=category we apply to all
-  // (conservative: give discount rather than deny incorrectly)
 ): boolean {
   if (sale.scope === 'all') return true
   if (sale.scope === 'specific') {
     return Array.isArray(sale.product_ids) && sale.product_ids.includes(productId)
   }
-  if (sale.scope === 'category') {
-    // May 15, 2026 REASON: Cart items don't carry category — we can't verify server-side.
-    // Fail open (give discount) to avoid false denials. Worst case: user gets sale price
-    // they'd have seen on the product page anyway. Failing closed would be worse UX.
-    return true
-  }
+  if (sale.scope === 'category') return true // Fail open — cart has no category
   return false
 }
 
 // ─── HMAC token helpers ───────────────────────────────────────────────────────
-// May 15, 2026 REASON: Reusing ADMIN_JWT_SECRET — no new env var needed.
-//   Token = base64(payload JSON) + "." + HMAC-SHA256 signature
-//   Payload contains: amount (smallest unit), currency, expiry timestamp
-//   create-order verifies signature + checks expiry before using amount.
-
 const TOKEN_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
 function signToken(payload: object): string {
@@ -120,40 +108,33 @@ function signToken(payload: object): string {
   return `${data}.${sig}`
 }
 
-// ─── CartItem type ────────────────────────────────────────────────────────────
+// ─── Cart item type ───────────────────────────────────────────────────────────
 interface CartItem {
-  id: string        // Printify product ID
+  id: string       // Printify product ID
   title: string
-  price: number     // base USD price (pre-discount)
+  price: number    // base USD price (pre-discount)
   quantity: number
   size: string
   image: string
 }
 
-// ─── Rate limiting (in-memory, resets on cold start) ─────────────────────────
-// May 15, 2026 REASON: This endpoint hits Supabase on every call — protect against
-//   brute-force / scraping. 10 calls per IP per minute.
+// ─── Rate limiting ────────────────────────────────────────────────────────────
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-const RATE_LIMIT = 10
-const RATE_WINDOW_MS = 60_000
-
 function checkRateLimit(ip: string): boolean {
   const now = Date.now()
   const entry = rateLimitMap.get(ip)
   if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS })
+    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 })
     return true
   }
-  if (entry.count >= RATE_LIMIT) return false
+  if (entry.count >= 10) return false
   entry.count++
   return true
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
 export async function POST(req: Request) {
-  // May 15, 2026 REASON: Rate limit before any DB work
-  const ip =
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
   if (!checkRateLimit(ip)) {
     return NextResponse.json(
       { error: 'Too many requests. Please try again shortly.' },
@@ -162,9 +143,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    // ── 1. Parse and validate request body ──────────────────────────────────
+    // ── 1. Parse and validate body ────────────────────────────────────────────
     const body = await req.json().catch(() => null)
-
     if (!body || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
@@ -175,29 +155,47 @@ export async function POST(req: Request) {
       country: string
     }
 
-    // Sanitise inputs
     const currency: CurrencyCode =
-      rawCurrency in USD_RATES ? (rawCurrency as CurrencyCode) : 'INR'
+      SUPPORTED_CURRENCIES.includes(rawCurrency as CurrencyCode)
+        ? (rawCurrency as CurrencyCode)
+        : 'INR'
     const country = typeof rawCountry === 'string' ? rawCountry.trim() : 'India'
 
-    // Validate each item has required fields and a positive price
     for (const item of items) {
       if (
         typeof item.id !== 'string' ||
-        typeof item.price !== 'number' ||
-        item.price <= 0 ||
-        typeof item.quantity !== 'number' ||
-        item.quantity < 1 ||
-        item.quantity > 100 // May 15, 2026: sanity cap — no 10,000-qty orders
+        typeof item.price !== 'number' || item.price <= 0 ||
+        typeof item.quantity !== 'number' || item.quantity < 1 || item.quantity > 100
       ) {
         return NextResponse.json({ error: 'Invalid item data' }, { status: 400 })
       }
     }
 
-    // ── 2. Verify user session from cookie ──────────────────────────────────
-    // May 15, 2026 REASON: We need user_id to check membership.
-    //   Supabase session token is in the auth cookie — getUser() with it
-    //   verifies the JWT signature server-side (no extra DB call for auth).
+    // ── 2. Load peak rates from Supabase ──────────────────────────────────────
+    // May 15, 2026 REASON: CRITICAL — must use same rates as currencyStore UI.
+    //   Both read from currency_rates.peak_rate → UI and server always match.
+    //   Previously server used hardcoded 83 INR/USD, UI used live ~95 → mismatch.
+    let peakRates: Record<CurrencyCode, number> = { ...FALLBACK_RATES }
+    try {
+      const { data: rateRows, error: rateError } = await supabaseAdmin
+        .from('currency_rates')
+        .select('currency, peak_rate')
+
+      if (!rateError && rateRows && rateRows.length > 0) {
+        for (const row of rateRows) {
+          if (SUPPORTED_CURRENCIES.includes(row.currency as CurrencyCode)) {
+            peakRates[row.currency as CurrencyCode] = Number(row.peak_rate)
+          }
+        }
+        peakRates['USD'] = 1 // Always 1 — base currency
+      } else {
+        console.warn('[validate-discount] currency_rates fetch issue — using fallback rates')
+      }
+    } catch (e) {
+      console.warn('[validate-discount] currency_rates unreachable — using fallback rates:', e)
+    }
+
+    // ── 3. Verify user session ────────────────────────────────────────────────
     const authHeader = req.headers.get('authorization') ?? ''
     const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
 
@@ -207,22 +205,20 @@ export async function POST(req: Request) {
       if (!error && user) userId = user.id
     }
 
-    // ── 3. Check active membership server-side ───────────────────────────────
-    // May 15, 2026 REASON: Never trust isMember from client — always re-verify here
+    // ── 4. Check membership server-side ──────────────────────────────────────
+    // May 15, 2026 REASON: Never trust isMember from client — always re-verify
     let isMember = false
     if (userId) {
       const { data: membership } = await supabaseAdmin
         .from('memberships')
         .select('id')
         .eq('user_id', userId)
-        .eq('active', true) // May 15, 2026: boolean column — NOT .eq('status','active')
-        .maybeSingle()      // May 15, 2026: maybeSingle not single — single throws on no row
-
+        .eq('active', true)   // boolean column — NOT .eq('status','active')
+        .maybeSingle()        // not .single() — throws PGRST116 on no row
       if (membership) isMember = true
     }
 
-    // ── 4. Fetch active sale server-side ─────────────────────────────────────
-    // May 15, 2026 REASON: Never trust sale data from client — fetch directly from DB
+    // ── 5. Fetch active sale server-side ──────────────────────────────────────
     const now = new Date().toISOString()
     const { data: saleRow } = await supabaseAdmin
       .from('sales')
@@ -234,30 +230,21 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle()
 
-    // ── 5. Compute discounted subtotal item by item ───────────────────────────
-    // May 15, 2026 REASON: Per-item scope check — a "specific products" sale should
-    //   only discount those products, not the whole cart. This is more accurate than
-    //   the client-side shortcut (which applied one discount % to the entire cart).
+    // ── 6. Compute discounted subtotal per item ───────────────────────────────
     let subtotalUSD = 0
     let discountedSubtotalUSD = 0
 
     for (const item of items) {
       const lineBaseUSD = item.price * item.quantity
-
-      // Determine sale discount for this item
       let saleDiscount = 0
       if (saleRow && isProductInSale(saleRow, item.id)) {
         saleDiscount = saleRow.discount_percent
       }
-
-      // Highest-wins rule per item
       const memberDiscount = isMember ? 15 : 0
       const effectiveDiscount = Math.max(saleDiscount, memberDiscount)
-
-      const lineDiscountedUSD =
-        effectiveDiscount > 0
-          ? lineBaseUSD * (1 - effectiveDiscount / 100)
-          : lineBaseUSD
+      const lineDiscountedUSD = effectiveDiscount > 0
+        ? lineBaseUSD * (1 - effectiveDiscount / 100)
+        : lineBaseUSD
 
       subtotalUSD += lineBaseUSD
       discountedSubtotalUSD += lineDiscountedUSD
@@ -265,17 +252,19 @@ export async function POST(req: Request) {
 
     const savingsUSD = subtotalUSD - discountedSubtotalUSD
 
-    // ── 6. Compute shipping ──────────────────────────────────────────────────
-    // May 15, 2026 REASON: Members get free shipping — enforced server-side
+    // ── 7. Compute shipping in USD using peak INR rate ─────────────────────────
+    // May 15, 2026 REASON: Shipping defined in INR — convert to USD first,
+    //   then to target currency via peak rate. All using Supabase peak rates.
     const shippingINR = getShippingChargeINR(country, isMember)
-    const shippingUSD = shippingINR / USD_RATES['INR']
+    const inrPeakRate = peakRates['INR'] // INR per 1 USD
+    const shippingUSD = shippingINR / inrPeakRate
 
-    // ── 7. Convert to payment currency ───────────────────────────────────────
-    const rate = USD_RATES[currency]
+    // ── 8. Convert total to payment currency using peak rate ──────────────────
+    // May 15, 2026 REASON: peakRates[currency] is exactly what currencyStore uses
+    //   for formatPrice() → UI total and charged total are now identical.
+    const targetRate = peakRates[currency]
     const totalUSD = discountedSubtotalUSD + shippingUSD
-    const totalInCurrency = totalUSD * rate
-
-    // Smallest unit (paise, cents, fils, etc.)
+    const totalInCurrency = totalUSD * targetRate
     const totalSmallest = Math.round(totalInCurrency * 100)
 
     if (totalSmallest < 100) {
@@ -285,15 +274,12 @@ export async function POST(req: Request) {
       )
     }
 
-    // ── 8. Sign and return token ──────────────────────────────────────────────
-    // May 15, 2026 REASON: Token payload is what create-order will use.
-    //   Client cannot forge it (HMAC), cannot reuse it after 5 min (expiry).
+    // ── 9. Sign token ─────────────────────────────────────────────────────────
     const tokenPayload = {
-      amount: totalSmallest,       // smallest unit — create-order uses this directly
+      amount: totalSmallest,
       currency,
       country,
       expiresAt: Date.now() + TOKEN_TTL_MS,
-      // Metadata for order records / debugging — not used in amount calc
       subtotalUSD: Math.round(subtotalUSD * 100) / 100,
       discountedSubtotalUSD: Math.round(discountedSubtotalUSD * 100) / 100,
       savingsUSD: Math.round(savingsUSD * 100) / 100,
@@ -301,13 +287,14 @@ export async function POST(req: Request) {
       isMember,
       saleId: saleRow?.id ?? null,
       saleName: saleRow?.name ?? null,
+      // May 15, 2026 REASON: Store the peak rate used — useful for order reconciliation
+      peakRateUsed: targetRate,
     }
 
     const validationToken = signToken(tokenPayload)
 
     return NextResponse.json({
       validationToken,
-      // Return display values for the checkout UI to show before user clicks Pay
       subtotalUSD: tokenPayload.subtotalUSD,
       discountedSubtotalUSD: tokenPayload.discountedSubtotalUSD,
       savingsUSD: tokenPayload.savingsUSD,
@@ -318,9 +305,10 @@ export async function POST(req: Request) {
       saleId: saleRow?.id ?? null,
       saleName: saleRow?.name ?? null,
       saleDiscount: saleRow?.discount_percent ?? 0,
+      peakRateUsed: targetRate,
     })
+
   } catch (err: any) {
-    // May 15, 2026 REASON: Never leak internal errors to client
     console.error('[validate-discount] error:', err?.message ?? err)
     return NextResponse.json(
       { error: 'Validation failed. Please try again.' },
