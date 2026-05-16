@@ -1,17 +1,24 @@
 // ============================================================
 // FILE: components/HomeClient.tsx
 // PURPOSE: Homepage client — hero, how it works, featured products, newsletter
-// LAST CHANGED: May 13, 2026
+// LAST CHANGED: May 16, 2026
 // WHY IT EXISTS: Client-side interactivity for homepage (newsletter, LCP preload, product cards)
 // DEPENDENCIES: ProductCard, lib/activeSale.ts, supabase auth, cartStore
 // ⚠️ DO NOT CHANGE: LCP preload useEffect — injects <link> into <head> for first product image
 // ⚠️ DO NOT CHANGE: onAuthStateChange pattern for membership check (never getSession on mount)
 // ⚠️ DO NOT CHANGE: fetchActiveSale called ONCE here, not inside each ProductCard
+// ⚠️ DO NOT CHANGE: honeypot input (name="website") must stay hidden and always sent as ''
+//   in the fetch body. The API route rejects any submission where website !== ''.
+//   Real users never see or fill it. Bots autofill it and get silently rejected.
 // ============================================================
 
 // --- CHANGE LOG ---
 // [May 13, 2026] CHANGED: Fetch activeSale + membership status once, pass to all ProductCards
 // REASON: SALES+ system now active — homepage featured products must reflect live discounts
+// [May 16, 2026] ADDED: Honeypot field to newsletter form
+// REASON: Security hardening — API route now checks for honeypot. Without the field in the
+//   form, the website key would be undefined in the body, which the API treats as empty (safe).
+//   But sending it explicitly as '' is the correct pattern — future-proofs the check.
 // --- END CHANGE LOG ---
 
 'use client'
@@ -102,7 +109,10 @@ export default function HomeClient({
       const res = await fetch('/api/newsletter', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        // [May 16, 2026] REASON: website: '' is the honeypot field — always sent as empty string.
+        //   API rejects any request where website has a value (bots autofill it).
+        //   Never remove this field or change its value.
+        body: JSON.stringify({ email, website: '' }),
       })
       if (res.ok) {
         toast.success('You are subscribed! Welcome to The Real Medico family.')
@@ -225,6 +235,18 @@ export default function HomeClient({
               onChange={e => setEmail(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSubscribe()}
               className="flex-1 px-4 py-3 rounded-lg text-text-dark focus:outline-none"
+            />
+            {/* [May 16, 2026] REASON: Honeypot — hidden from real users, bots autofill it.
+                API rejects any submission where this has a value. Must stay display:none,
+                tabIndex={-1}, aria-hidden. Never style it to be visible. */}
+            <input
+              type="text"
+              name="website"
+              value=""
+              onChange={() => {}}
+              tabIndex={-1}
+              aria-hidden="true"
+              style={{ display: 'none' }}
             />
             <button
               onClick={handleSubscribe}
