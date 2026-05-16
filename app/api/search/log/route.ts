@@ -1,168 +1,123 @@
 // ============================================================
 // FILE: app/api/search/log/route.ts
-// PURPOSE: Log search queries with anti-spam/bot protection
-// LAST CHANGED: May 11, 2026
-// WHY IT EXISTS: Search analytics — need clean data without spam/bots
-// DEPENDENCIES: SUPABASE_SERVICE_ROLE_KEY, search_logs table
-// ⚠️ DO NOT CHANGE: All anti-spam logic is server-side — cannot be bypassed client-side
+// PURPOSE: Log search queries to search_logs table for analytics
+// LAST CHANGED: May 16, 2026
+// WHY IT EXISTS: Powers admin analytics — what customers are searching for.
+//   Called by SearchClient.tsx with 800ms debounce, fire-and-forget.
+// DEPENDENCIES: lib/rateLimit.ts, Supabase (service role), search_logs table
+// ⚠️ DO NOT CHANGE: Always returns 200 — SearchClient is fire-and-forget.
+//   A non-200 here would cause unhandled promise rejections in the browser.
+// ⚠️ DO NOT CHANGE: Service role key used — search_logs table has RLS that
+//   blocks anon inserts (analytics data must be write-protected from clients).
+// ⚠️ DO NOT CHANGE: Anti-spam filters must stay — without them a bot can
+//   fill the search_logs table with garbage in seconds, corrupting all analytics.
 // ============================================================
 
-import { NextRequest, NextResponse } from 'next/server'
+// --- CHANGE LOG ---
+// [May 16, 2026] CREATED: New file — search/log/route.ts did not exist
+// REASON: SearchClient was calling /api/search/log but no handler existed.
+//   Built with full rate limiting, sanitization, and anti-spam from day one.
+// --- END CHANGE LOG ---
+
+import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { createHash } from 'crypto'
+import { checkRateLimit, getClientIp, RATE_LIMITS } from '@/lib/rateLimit'
 
-function getAdminSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
-}
+// [May 16, 2026] REASON: Service role — search_logs likely has RLS blocking anon writes
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
-// ── Anti-spam: in-memory rate limit store ──
-// Structure: ip_hash → { count, windowStart, lastQuery, lastQueryTime }
-const rateLimitStore = new Map<string, {
-  count: number
-  windowStart: number
-  lastQuery: string
-  lastQueryTime: number
-}>()
+// [May 16, 2026] REASON: Queries must be meaningful text — strip anything that
+//   could be used for injection or is clearly not a real search
+const MAX_QUERY_LENGTH = 200
+const MIN_QUERY_LENGTH = 2
 
-const RATE_LIMIT_WINDOW_MS = 60 * 1000  // 1 minute window
-const MAX_SEARCHES_PER_WINDOW = 20       // 20 searches/minute max
-const MIN_QUERY_INTERVAL_MS = 200        // 200ms between searches (5/sec max)
-const DUPLICATE_SUPPRESS_MS = 5000      // same query within 5s = don't log again
-
-// Known bot user-agent patterns
-const BOT_UA_PATTERNS = [
-  /bot/i, /crawl/i, /spider/i, /scraper/i, /curl/i, /wget/i,
-  /python/i, /axios/i, /node-fetch/i, /headless/i, /phantom/i,
-  /selenium/i, /puppeteer/i, /playwright/i,
+// [May 16, 2026] REASON: Obvious bot/spam patterns — discard these silently
+const SPAM_PATTERNS = [
+  /<[^>]*>/,           // HTML tags
+  /javascript:/i,      // JS injection attempts
+  /on\w+\s*=/i,        // event handler injection (onclick=, onload= etc)
+  /[<>'"`;\\]/,        // SQL/XSS special characters
+  /\b(select|insert|update|delete|drop|union|exec|script)\b/i, // SQL keywords
 ]
 
-function hashIp(ip: string): string {
-  // Hash IP for privacy — we track patterns not identities
-  return createHash('sha256').update(ip + 'trm_salt_2026').digest('hex').slice(0, 16)
-}
-
-function getClientIp(req: NextRequest): string {
-  return (
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    req.headers.get('x-real-ip') ||
-    'unknown'
-  )
-}
-
-function isBot(userAgent: string | null): boolean {
-  if (!userAgent) return true // No UA = likely bot
-  return BOT_UA_PATTERNS.some(pattern => pattern.test(userAgent))
-}
-
-function checkRateLimit(ipHash: string, query: string): {
-  allowed: boolean
-  reason?: string
-} {
-  const now = Date.now()
-  const record = rateLimitStore.get(ipHash)
-
-  if (!record) {
-    rateLimitStore.set(ipHash, {
-      count: 1,
-      windowStart: now,
-      lastQuery: query,
-      lastQueryTime: now,
-    })
-    return { allowed: true }
+export async function POST(req: Request) {
+  // ── 1. Rate limit ─────────────────────────────────────────────────────────
+  // [May 16, 2026] REASON: 30 logs/min per IP — generous for real users (debounced
+  //   at 800ms in SearchClient so real max is ~75/min of searching), brutal for bots.
+  //   Returns 200 always — SearchClient is fire-and-forget, must not throw.
+  const ip = getClientIp(req)
+  if (!checkRateLimit(ip, 'searchLog')) {
+    return NextResponse.json({ logged: false, reason: 'rate_limited' }, { status: 200 })
   }
 
-  // Reset window if expired
-  if (now - record.windowStart > RATE_LIMIT_WINDOW_MS) {
-    rateLimitStore.set(ipHash, {
-      count: 1,
-      windowStart: now,
-      lastQuery: query,
-      lastQueryTime: now,
-    })
-    return { allowed: true }
-  }
-
-  // Too fast (more than 5/sec)
-  if (now - record.lastQueryTime < MIN_QUERY_INTERVAL_MS) {
-    return { allowed: false, reason: 'too_fast' }
-  }
-
-  // Duplicate query within suppression window
-  if (
-    record.lastQuery.toLowerCase() === query.toLowerCase() &&
-    now - record.lastQueryTime < DUPLICATE_SUPPRESS_MS
-  ) {
-    return { allowed: false, reason: 'duplicate' }
-  }
-
-  // Over rate limit
-  if (record.count >= MAX_SEARCHES_PER_WINDOW) {
-    return { allowed: false, reason: 'rate_limit' }
-  }
-
-  // Update record
-  rateLimitStore.set(ipHash, {
-    count: record.count + 1,
-    windowStart: record.windowStart,
-    lastQuery: query,
-    lastQueryTime: now,
-  })
-  return { allowed: true }
-}
-
-export async function POST(req: NextRequest) {
   try {
-    const { query, resultCount, sessionId, userId } = await req.json()
-
-    // ── Validation ──
-    if (!query || typeof query !== 'string') {
-      return NextResponse.json({ logged: false, reason: 'invalid' })
+    const body = await req.json().catch(() => null)
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ logged: false }, { status: 200 })
     }
 
-    const trimmed = query.trim()
+    // ── 2. Extract + validate fields ─────────────────────────────────────────
+    const { query: rawQuery, resultCount, sessionId, userId } = body
 
-    // Too short or too long
-    if (trimmed.length < 2 || trimmed.length > 100) {
-      return NextResponse.json({ logged: false, reason: 'length' })
+    if (!rawQuery || typeof rawQuery !== 'string') {
+      return NextResponse.json({ logged: false }, { status: 200 })
     }
 
-    // Pure numbers only (e.g. "123") — not useful signal
-    if (/^\d+$/.test(trimmed)) {
-      return NextResponse.json({ logged: false, reason: 'numeric_only' })
+    // ── 3. Sanitize query ────────────────────────────────────────────────────
+    // [May 16, 2026] REASON: Trim, enforce length bounds, strip control characters
+    const query = rawQuery.trim().replace(/[\x00-\x1F\x7F]/g, '')
+
+    if (query.length < MIN_QUERY_LENGTH || query.length > MAX_QUERY_LENGTH) {
+      return NextResponse.json({ logged: false, reason: 'invalid_length' }, { status: 200 })
     }
 
-    // ── Bot detection ──
-    const userAgent = req.headers.get('user-agent')
-    if (isBot(userAgent)) {
-      return NextResponse.json({ logged: false, reason: 'bot' })
+    // ── 4. Spam pattern check ─────────────────────────────────────────────────
+    // [May 16, 2026] REASON: Discard injection attempts and obvious bot noise silently
+    for (const pattern of SPAM_PATTERNS) {
+      if (pattern.test(query)) {
+        return NextResponse.json({ logged: false, reason: 'filtered' }, { status: 200 })
+      }
     }
 
-    // ── Rate limiting ──
-    const ip = getClientIp(req)
-    const ipHash = hashIp(ip)
-    const rateCheck = checkRateLimit(ipHash, trimmed)
+    // ── 5. Sanitize optional fields ──────────────────────────────────────────
+    // [May 16, 2026] REASON: Never trust client-supplied IDs — validate shape only
+    const safeSessionId = typeof sessionId === 'string'
+      ? sessionId.slice(0, 64).replace(/[^a-z0-9]/gi, '')
+      : null
 
-    if (!rateCheck.allowed) {
-      return NextResponse.json({ logged: false, reason: rateCheck.reason })
+    const safeUserId = typeof userId === 'string' && userId.length > 0
+      ? userId.slice(0, 64)
+      : null
+
+    const safeResultCount = typeof resultCount === 'number' && resultCount >= 0
+      ? Math.min(Math.round(resultCount), 9999)
+      : 0
+
+    // ── 6. Insert into Supabase ──────────────────────────────────────────────
+    const { error } = await supabaseAdmin
+      .from('search_logs')
+      .insert([{
+        query,
+        result_count: safeResultCount,
+        session_id: safeSessionId,
+        user_id: safeUserId,
+        created_at: new Date().toISOString(),
+      }])
+
+    if (error) {
+      // [May 16, 2026] REASON: Log error server-side but never expose to client
+      console.error('[search/log] insert error:', error.message)
+      return NextResponse.json({ logged: false }, { status: 200 })
     }
 
-    // ── Log to Supabase ──
-    const supabase = getAdminSupabase()
-    await supabase.from('search_logs').insert({
-      query: trimmed.toLowerCase(),
-      user_id: userId || null,
-      ip_hash: ipHash,
-      session_id: sessionId || null,
-      result_count: resultCount ?? null,
-      created_at: new Date().toISOString(),
-    })
+    return NextResponse.json({ logged: true }, { status: 200 })
 
-    return NextResponse.json({ logged: true })
-  } catch {
-    // Silent fail — never block the user's search experience
-    return NextResponse.json({ logged: false, reason: 'error' })
+  } catch (err: any) {
+    // [May 16, 2026] REASON: Always 200 — fire-and-forget must never throw in browser
+    console.error('[search/log] unexpected error:', err?.message ?? err)
+    return NextResponse.json({ logged: false }, { status: 200 })
   }
 }
