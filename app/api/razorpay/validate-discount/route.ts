@@ -1,12 +1,12 @@
 // ============================================================
 // FILE: app/api/razorpay/validate-discount/route.ts
 // PURPOSE: Server-side discount + amount validation — returns HMAC-signed token
-// LAST CHANGED: May 15, 2026
+// LAST CHANGED: May 16, 2026
 // WHY IT EXISTS: Prevent client-side price tampering. Previously checkout sent
 //   its own computed razorpayAmount to create-order which trusted it blindly.
 //   Now: server re-computes everything, returns signed token. create-order
 //   only accepts that token — never a raw client amount.
-// DEPENDENCIES: Supabase (service role), ADMIN_JWT_SECRET (HMAC signing),
+// DEPENDENCIES: lib/rateLimit.ts, Supabase (service role), ADMIN_JWT_SECRET (HMAC signing),
 //   currency_rates table (peak rates — same source as UI)
 // ⚠️ DO NOT CHANGE: Reads peak_rate from currency_rates — NOT hardcoded rates.
 //   This guarantees UI and server use the exact same rate → no price mismatch.
@@ -24,11 +24,15 @@
 // REASON: Hardcoded rates (83 INR/USD) caused mismatch vs live UI rates (~95 INR/USD).
 //   Now reads peak_rate from currency_rates table — same source as currencyStore.
 //   UI and server always use identical rate → mismatch impossible.
+// [May 16, 2026] CHANGED: Removed inline rate limiter, now uses shared lib/rateLimit.ts
+// REASON: Each route had its own copy of rate limit logic — hard to audit and maintain.
+//   Centralised in lib/rateLimit.ts with consistent limits across all routes.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createHmac } from 'crypto'
+import { checkRateLimit, getClientIp, rateLimitResponse, RATE_LIMITS } from '@/lib/rateLimit'
 
 // May 15, 2026 REASON: Service role — membership verify + currency_rates read
 const supabaseAdmin = createClient(
@@ -118,28 +122,12 @@ interface CartItem {
   image: string
 }
 
-// ─── Rate limiting ────────────────────────────────────────────────────────────
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 })
-    return true
-  }
-  if (entry.count >= 10) return false
-  entry.count++
-  return true
-}
-
 // ─── Main handler ─────────────────────────────────────────────────────────────
 export async function POST(req: Request) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
-  if (!checkRateLimit(ip)) {
-    return NextResponse.json(
-      { error: 'Too many requests. Please try again shortly.' },
-      { status: 429 }
-    )
+  // [May 16, 2026] REASON: Migrated from inline rate limiter to shared lib/rateLimit.ts
+  const ip = getClientIp(req)
+  if (!checkRateLimit(ip, 'razorpayValidate')) {
+    return rateLimitResponse(RATE_LIMITS.razorpayValidate.windowMs)
   }
 
   try {
