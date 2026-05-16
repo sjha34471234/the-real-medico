@@ -1,19 +1,21 @@
 // ============================================================
 // FILE: app/api/currency/sync/route.ts
 // PURPOSE: Fetch live rates, apply ratchet rule, save peaks to Supabase
-// LAST CHANGED: May 15, 2026
+// LAST CHANGED: May 16, 2026
 // WHY IT EXISTS: Prices only ever go up — peak_rate is the floor.
 //   If live rate > stored peak → update peak (price rises).
 //   If live rate < stored peak → keep peak as-is (price never falls).
 //   Called silently from layout.tsx on every page load, max once per hour
 //   (gated by updated_at timestamp in Supabase — no cron job needed).
-// DEPENDENCIES: SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SUPABASE_URL,
-//   open.er-api.com (free, no key needed)
+// DEPENDENCIES: lib/rateLimit.ts, SUPABASE_SERVICE_ROLE_KEY,
+//   NEXT_PUBLIC_SUPABASE_URL, open.er-api.com (free, no key needed)
 // ⚠️ DO NOT CHANGE: Ratchet rule — peak only goes up, never down.
 //   The only exception is a manual admin override via Supabase SQL Editor.
 // ⚠️ DO NOT CHANGE: Uses service role key — bypasses RLS for writes.
 // ⚠️ DO NOT CHANGE: cache: 'no-store' on live rate fetch — stale rates
 //   would silently fail to trigger ratchet updates.
+// ⚠️ DO NOT CHANGE: Rate limit returns 200 not 429 — layout.tsx fires this
+//   silently on every page load; a 429 would cause console errors for normal users.
 // ============================================================
 
 // --- CHANGE LOG ---
@@ -21,10 +23,14 @@
 // REASON: Hardcoded rates (83 INR/USD) caused price mismatch vs live rates (~95).
 //   Prices were displaying one amount and Razorpay charging a different amount.
 //   Also: business rule = prices never go down even if currency recovers.
+// [May 16, 2026] CHANGED: Removed inline rate limiter, now uses shared lib/rateLimit.ts
+// REASON: Inline limiter was duplicated logic. Centralised in lib/rateLimit.ts.
+//   IMPORTANT: Still returns 200 on rate limit (not 429) — layout.tsx is silent.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { checkRateLimit, getClientIp, RATE_LIMITS } from '@/lib/rateLimit'
 
 // May 15, 2026 REASON: Service role — needs write access to currency_rates.
 //   RLS blocks anon writes. Service role bypasses RLS safely on server only.
@@ -44,27 +50,12 @@ const FALLBACK_RATES: Record<CurrencyCode, number> = {
   SGD: 1.34, MYR: 4.7, AUD: 1.53, CAD: 1.36,
 }
 
-// ─── Rate limiting ────────────────────────────────────────────────────────────
-// May 15, 2026 REASON: layout.tsx fires this on every page load — prevent
-//   hammering even within the 1hr gate. 5 calls/min per IP is plenty.
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now()
-  const entry = rateLimitMap.get(ip)
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + 60_000 })
-    return true
-  }
-  if (entry.count >= 5) return false
-  entry.count++
-  return true
-}
-
 export async function POST(req: Request) {
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown'
-  if (!checkRateLimit(ip)) {
-    // May 15, 2026 REASON: Return 200 not 429 — layout fires this silently,
-    //   we don't want browser console errors appearing for normal rate limiting.
+  // [May 16, 2026] REASON: Migrated from inline rate limiter to shared lib/rateLimit.ts
+  // CRITICAL: Return 200 not 429 — layout.tsx fires this silently on every page load.
+  //   A non-200 response would cause browser console errors for completely normal traffic.
+  const ip = getClientIp(req)
+  if (!checkRateLimit(ip, 'currencySync')) {
     return NextResponse.json({ skipped: true, reason: 'rate_limited' }, { status: 200 })
   }
 
