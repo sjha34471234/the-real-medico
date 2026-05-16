@@ -1,14 +1,15 @@
 // ============================================================
 // FILE: app/api/razorpay/create-order/route.ts
 // PURPOSE: Create Razorpay order using only server-validated amount from signed token
-// LAST CHANGED: May 15, 2026
+// LAST CHANGED: May 16, 2026
 // WHY IT EXISTS: Handles Razorpay order creation for checkout payment flow
-// DEPENDENCIES: razorpay npm package, RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET,
-//   ADMIN_JWT_SECRET (for HMAC token verification — must match validate-discount route)
+// DEPENDENCIES: lib/rateLimit.ts, razorpay npm package, RAZORPAY_KEY_ID,
+//   RAZORPAY_KEY_SECRET, ADMIN_JWT_SECRET (HMAC token verification)
 // ⚠️ DO NOT CHANGE: NEVER accept a raw `amount` from the client anymore.
 //   All amounts must come via a validationToken from /api/razorpay/validate-discount.
 //   This is the core of the tamper-prevention system.
 // ⚠️ DO NOT CHANGE: Token expiry check — do not remove or increase the 5-min TTL.
+// ⚠️ DO NOT CHANGE: Timing-safe HMAC comparison — prevents timing oracle attacks.
 // ============================================================
 
 // --- CHANGE LOG ---
@@ -16,16 +17,19 @@
 // REASON: Client could send any amount (e.g. 1 paise) and get a real Razorpay order.
 //   Now requires a validationToken signed by /api/razorpay/validate-discount.
 //   Amount is extracted from the verified token — client cannot influence it.
+// [May 16, 2026] ADDED: Rate limiting via shared lib/rateLimit.ts
+// REASON: Route had no rate limit at all — an attacker could hammer it to
+//   burn Razorpay API quota or probe token format. 10/min per IP is sufficient.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
 import Razorpay from 'razorpay'
 import { createHmac } from 'crypto'
+import { checkRateLimit, getClientIp, rateLimitResponse, RATE_LIMITS } from '@/lib/rateLimit'
 
 // ─── HMAC token verification ──────────────────────────────────────────────────
 // May 15, 2026 REASON: Must use the same secret + algorithm as validate-discount.
 //   If someone tampers with the token data, the signature won't match → rejected.
-
 function verifyAndDecodeToken(token: string): Record<string, any> | null {
   const parts = token.split('.')
   if (parts.length !== 2) return null
@@ -53,6 +57,13 @@ function verifyAndDecodeToken(token: string): Record<string, any> | null {
 }
 
 export async function POST(req: Request) {
+  // [May 16, 2026] REASON: Rate limit before any token processing —
+  //   stops probing even before we touch the HMAC logic
+  const ip = getClientIp(req)
+  if (!checkRateLimit(ip, 'razorpayCreateOrder')) {
+    return rateLimitResponse(RATE_LIMITS.razorpayCreateOrder.windowMs)
+  }
+
   try {
     const body = await req.json().catch(() => null)
     if (!body) {
