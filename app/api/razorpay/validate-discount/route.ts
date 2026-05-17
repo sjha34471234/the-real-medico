@@ -1,15 +1,14 @@
 // ============================================================
 // FILE: app/api/razorpay/validate-discount/route.ts
-// PURPOSE: Server-side discount + amount validation — returns HMAC-signed token
-// LAST CHANGED: May 16, 2026
-// WHY IT EXISTS: Prevent client-side price tampering. Previously checkout sent
-//   its own computed razorpayAmount to create-order which trusted it blindly.
-//   Now: server re-computes everything, returns signed token. create-order
-//   only accepts that token — never a raw client amount.
-// DEPENDENCIES: lib/rateLimit.ts, Supabase (service role), ADMIN_JWT_SECRET (HMAC signing),
-//   currency_rates table (peak rates — same source as UI)
+// PURPOSE: Orchestrates server-side discount + amount validation — returns HMAC-signed token.
+//   Pure orchestration: reads from DB, calls lib functions, returns token.
+// LAST CHANGED: May 17, 2026
+// WHY IT EXISTS: Prevent client-side price tampering. Server re-computes everything,
+//   returns signed token. create-order only accepts that token — never a raw amount.
+// DEPENDENCIES: lib/rateLimit.ts, lib/shipping.ts, lib/hmac.ts,
+//   Supabase (service role), currency_rates table
 // ⚠️ DO NOT CHANGE: Reads peak_rate from currency_rates — NOT hardcoded rates.
-//   This guarantees UI and server use the exact same rate → no price mismatch.
+//   UI and server use identical rate → no price mismatch possible.
 // ⚠️ DO NOT CHANGE: Token TTL 5 minutes — do not increase (replay attack window)
 // ⚠️ DO NOT CHANGE: Highest-wins rule — Math.max(saleDiscount, memberDiscount)
 // ⚠️ DO NOT CHANGE: membership uses boolean .eq('active', true)
@@ -22,17 +21,17 @@
 //   could set amount=100 (1 paise) and get a valid Razorpay order.
 // [May 15, 2026] UPDATED: Replaced hardcoded USD_RATES with Supabase peak_rate lookup
 // REASON: Hardcoded rates (83 INR/USD) caused mismatch vs live UI rates (~95 INR/USD).
-//   Now reads peak_rate from currency_rates table — same source as currencyStore.
-//   UI and server always use identical rate → mismatch impossible.
 // [May 16, 2026] CHANGED: Removed inline rate limiter, now uses shared lib/rateLimit.ts
-// REASON: Each route had its own copy of rate limit logic — hard to audit and maintain.
-//   Centralised in lib/rateLimit.ts with consistent limits across all routes.
+// REASON: Each route had its own copy — centralised in lib/rateLimit.ts.
+// [May 17, 2026] REFACTORED: Extracted shipping logic → lib/shipping.ts, HMAC → lib/hmac.ts
+// REASON: Modular architecture mandate. Route now orchestrates only — no inline logic.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { createHmac } from 'crypto'
 import { checkRateLimit, getClientIp, rateLimitResponse, RATE_LIMITS } from '@/lib/rateLimit'
+import { getShippingChargeINR, isProductInSale } from '@/lib/shipping'
+import { signToken, TOKEN_TTL_MS } from '@/lib/hmac'
 
 // May 15, 2026 REASON: Service role — membership verify + currency_rates read
 const supabaseAdmin = createClient(
@@ -45,76 +44,14 @@ type CurrencyCode = 'INR' | 'USD' | 'GBP' | 'AED' | 'SGD' | 'MYR' | 'AUD' | 'CAD
 const SUPPORTED_CURRENCIES: CurrencyCode[] = ['INR', 'USD', 'GBP', 'AED', 'SGD', 'MYR', 'AUD', 'CAD']
 
 // May 15, 2026 REASON: Last-resort fallback only — used if Supabase is unreachable.
-//   Should match seeded values in supabase-currency-rates.sql.
-//   In normal operation, these are NEVER used — Supabase peak rates are used instead.
+//   In normal operation these are NEVER used — Supabase peak rates are used instead.
 const FALLBACK_RATES: Record<CurrencyCode, number> = {
   INR: 95, USD: 1, GBP: 0.79, AED: 3.67,
   SGD: 1.34, MYR: 4.7, AUD: 1.53, CAD: 1.36,
 }
 
-// ─── Shipping logic ───────────────────────────────────────────────────────────
-// May 15, 2026 REASON: Shipping is in INR internally — converted to target currency
-//   using the same peak rate. Keep in sync with create-order if zones change.
-function getShippingChargeINR(country: string, isMember: boolean): number {
-  if (isMember) return 0  // Members always get free shipping
-
-  const c = country?.toLowerCase().trim()
-  if (!c || c === 'india') return 0
-
-  const zone1 = ['nepal', 'bangladesh', 'sri lanka', 'bhutan', 'myanmar']
-  if (zone1.includes(c)) return 299
-
-  const zone2 = [
-    'uae', 'singapore', 'malaysia', 'thailand', 'indonesia',
-    'philippines', 'vietnam', 'qatar', 'kuwait', 'bahrain',
-    'oman', 'saudi arabia',
-  ]
-  if (zone2.includes(c)) return 599
-
-  const zone3 = [
-    'united states', 'usa', 'us', 'united kingdom', 'uk', 'canada',
-    'australia', 'germany', 'france', 'netherlands', 'italy', 'spain',
-    'sweden', 'norway', 'denmark', 'finland', 'switzerland', 'austria',
-    'belgium', 'new zealand', 'ireland', 'portugal',
-  ]
-  if (zone3.includes(c)) return 899
-
-  const zone4 = [
-    'south africa', 'nigeria', 'kenya', 'ghana',
-    'brazil', 'argentina', 'mexico', 'colombia',
-  ]
-  if (zone4.includes(c)) return 1099
-
-  return 999
-}
-
-// ─── Sale scope check ─────────────────────────────────────────────────────────
-function isProductInSale(
-  sale: { scope: string; product_ids: string[] | null; category: string | null },
-  productId: string,
-): boolean {
-  if (sale.scope === 'all') return true
-  if (sale.scope === 'specific') {
-    return Array.isArray(sale.product_ids) && sale.product_ids.includes(productId)
-  }
-  if (sale.scope === 'category') return true // Fail open — cart has no category
-  return false
-}
-
-// ─── HMAC token helpers ───────────────────────────────────────────────────────
-const TOKEN_TTL_MS = 5 * 60 * 1000 // 5 minutes
-
-function signToken(payload: object): string {
-  const data = Buffer.from(JSON.stringify(payload)).toString('base64url')
-  const sig = createHmac('sha256', process.env.ADMIN_JWT_SECRET!)
-    .update(data)
-    .digest('hex')
-  return `${data}.${sig}`
-}
-
-// ─── Cart item type ───────────────────────────────────────────────────────────
 interface CartItem {
-  id: string       // Printify product ID
+  id: string
   title: string
   price: number    // base USD price (pre-discount)
   quantity: number
@@ -122,9 +59,7 @@ interface CartItem {
   image: string
 }
 
-// ─── Main handler ─────────────────────────────────────────────────────────────
 export async function POST(req: Request) {
-  // [May 16, 2026] REASON: Migrated from inline rate limiter to shared lib/rateLimit.ts
   const ip = getClientIp(req)
   if (!checkRateLimit(ip, 'razorpayValidate')) {
     return rateLimitResponse(RATE_LIMITS.razorpayValidate.windowMs)
@@ -161,8 +96,6 @@ export async function POST(req: Request) {
 
     // ── 2. Load peak rates from Supabase ──────────────────────────────────────
     // May 15, 2026 REASON: CRITICAL — must use same rates as currencyStore UI.
-    //   Both read from currency_rates.peak_rate → UI and server always match.
-    //   Previously server used hardcoded 83 INR/USD, UI used live ~95 → mismatch.
     let peakRates: Record<CurrencyCode, number> = { ...FALLBACK_RATES }
     try {
       const { data: rateRows, error: rateError } = await supabaseAdmin
@@ -218,16 +151,15 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle()
 
-    // ── 6. Compute discounted subtotal per item ───────────────────────────────
+    // ── 6. Compute discounted subtotal (highest-wins rule per item) ───────────
     let subtotalUSD = 0
     let discountedSubtotalUSD = 0
 
     for (const item of items) {
       const lineBaseUSD = item.price * item.quantity
-      let saleDiscount = 0
-      if (saleRow && isProductInSale(saleRow, item.id)) {
-        saleDiscount = saleRow.discount_percent
-      }
+      const saleDiscount = saleRow && isProductInSale(saleRow, item.id)
+        ? saleRow.discount_percent
+        : 0
       const memberDiscount = isMember ? 15 : 0
       const effectiveDiscount = Math.max(saleDiscount, memberDiscount)
       const lineDiscountedUSD = effectiveDiscount > 0
@@ -240,20 +172,16 @@ export async function POST(req: Request) {
 
     const savingsUSD = subtotalUSD - discountedSubtotalUSD
 
-    // ── 7. Compute shipping in USD using peak INR rate ─────────────────────────
-    // May 15, 2026 REASON: Shipping defined in INR — convert to USD first,
-    //   then to target currency via peak rate. All using Supabase peak rates.
+    // ── 7. Compute shipping using lib/shipping.ts ─────────────────────────────
+    // May 15, 2026 REASON: Shipping defined in INR — convert to USD via INR peak rate,
+    //   then to target currency. All using Supabase peak rates (same as UI).
     const shippingINR = getShippingChargeINR(country, isMember)
-    const inrPeakRate = peakRates['INR'] // INR per 1 USD
-    const shippingUSD = shippingINR / inrPeakRate
+    const shippingUSD = shippingINR / peakRates['INR']
 
-    // ── 8. Convert total to payment currency using peak rate ──────────────────
-    // May 15, 2026 REASON: peakRates[currency] is exactly what currencyStore uses
-    //   for formatPrice() → UI total and charged total are now identical.
+    // ── 8. Convert total to payment currency ──────────────────────────────────
     const targetRate = peakRates[currency]
     const totalUSD = discountedSubtotalUSD + shippingUSD
-    const totalInCurrency = totalUSD * targetRate
-    const totalSmallest = Math.round(totalInCurrency * 100)
+    const totalSmallest = Math.round(totalUSD * targetRate * 100)
 
     if (totalSmallest < 100) {
       return NextResponse.json(
@@ -262,7 +190,7 @@ export async function POST(req: Request) {
       )
     }
 
-    // ── 9. Sign token ─────────────────────────────────────────────────────────
+    // ── 9. Sign token via lib/hmac.ts ─────────────────────────────────────────
     const tokenPayload = {
       amount: totalSmallest,
       currency,
