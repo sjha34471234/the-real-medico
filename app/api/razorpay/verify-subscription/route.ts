@@ -1,8 +1,9 @@
 // ============================================================
 // FILE: app/api/razorpay/verify-subscription/route.ts
 // PURPOSE: Verifies Razorpay membership payment, inserts memberships row,
-//          logs payment in orders table as type='membership'
-// LAST CHANGED: May 15, 2026
+//          logs payment in orders table as type='membership',
+//          sets is_member = true on profiles for community cosmetics
+// LAST CHANGED: May 17, 2026
 // WHY IT EXISTS: Old route verified signature but had TODO — Supabase insert
 //   was commented out. This replaces it with the full implementation.
 // DEPENDENCIES: RAZORPAY_KEY_SECRET, SUPABASE_SERVICE_ROLE_KEY
@@ -21,6 +22,10 @@
 //   2. Inserts new memberships row with 30-day expiry
 //   3. Logs payment in orders table as type='membership'
 //   4. Returns membership expiry date to client for display
+// [May 17, 2026] UPDATED: Sets is_member = true on profiles after membership insert
+// REASON: Community site (community.therealmedico.store) reads is_member from
+//   profiles table to show Real Medico+ cosmetics. Same Supabase project —
+//   one update here covers both store and community automatically.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
@@ -120,6 +125,20 @@ export async function POST(req: Request) {
     if (membershipError) {
       console.error('[verify-subscription] Failed to insert membership:', membershipError)
       return NextResponse.json({ error: 'Failed to activate membership' }, { status: 500 })
+    }
+
+    // ── Set is_member = true on profiles ─────────────────────────────────────
+    // May 17, 2026 REASON: Community site reads is_member from profiles table
+    // to show Real Medico+ cosmetics. Same Supabase project — one update covers both.
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .update({ is_member: true })
+      .eq('id', user_id)
+
+    if (profileError) {
+      // Non-fatal — membership is activated. Community cosmetics will be missing
+      // but payment is confirmed. Log and continue.
+      console.error('[verify-subscription] Failed to set is_member on profiles (non-fatal):', profileError)
     }
 
     // ── Log in Orders Table ───────────────────────────────────────────────────
