@@ -1,3 +1,23 @@
+// ============================================================
+// FILE: app/trending/page.tsx
+// PURPOSE: Trending products page — ranked by order count, with sale discounts applied
+// LAST CHANGED: May 17, 2026
+// WHY IT EXISTS: Shows most popular products ordered by healthcare professionals
+// DEPENDENCIES: ProductCard, Supabase anon client, Printify API
+// ⚠️ DO NOT CHANGE: isMember is always false here — server component cannot read auth.
+//   Membership discount applies correctly once the user reaches cart/checkout.
+//   This matches the behaviour of ShopClient, HomeClient, and SearchClient.
+// ⚠️ DO NOT CHANGE: activeSale fetched once and passed to every ProductCard —
+//   do NOT fetch inside ProductCard itself (N+1 problem).
+// ============================================================
+
+// --- CHANGE LOG ---
+// [May 17, 2026] FIXED: ProductCards not showing sale discounts on trending page
+// REASON: activeSale and isMember props were not being passed to ProductCard.
+//   Same fix already applied to ShopClient, HomeClient, SearchClient (May 14, 2026).
+//   activeSale now fetched in getTrendingProducts() alongside order counts.
+// --- END CHANGE LOG ---
+
 import { Suspense } from 'react'
 import ProductCard from '@/components/ProductCard'
 import { createClient } from '@supabase/supabase-js'
@@ -9,15 +29,28 @@ export const metadata = {
 
 async function getTrendingProducts() {
   try {
-    // Step 1 — fetch order counts from Supabase
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
-    const { data: counts } = await supabase
-      .from('product_order_counts')
-      .select('product_id, order_count')
-      .limit(12)
+
+    // Step 1 — fetch order counts + active sale in parallel
+    const now = new Date().toISOString()
+    const [{ data: counts }, { data: saleRow }] = await Promise.all([
+      supabase
+        .from('product_order_counts')
+        .select('product_id, order_count')
+        .limit(12),
+      supabase
+        .from('sales')
+        .select('id, name, discount_percent, scope, product_ids, category, end_date')
+        .eq('status', 'active')
+        .lte('start_date', now)
+        .gte('end_date', now)
+        .order('discount_percent', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
 
     // Step 2 — fetch all products from Printify
     const response = await fetch(
@@ -46,40 +79,50 @@ async function getTrendingProducts() {
       })),
     }))
 
-    // Step 3 — if we have order data, sort by it
+    // Step 3 — sort by order count if available
+    let products: any[]
+    let hasRealData = false
+
     if (counts && counts.length > 0) {
       const countMap = new Map(counts.map((c: any) => [c.product_id, Number(c.order_count)]))
       const trending = allProducts
         .filter((p: any) => countMap.has(p.id))
         .sort((a: any, b: any) => (countMap.get(b.id) || 0) - (countMap.get(a.id) || 0))
-      // If we have fewer than 4 trending, pad with other products
+
       if (trending.length < 4) {
         const trendingIds = new Set(trending.map((p: any) => p.id))
-        const rest = allProducts.filter((p: any) => !trendingIds.has(p.id)).slice(0, 12 - trending.length)
-        return { products: [...trending, ...rest], hasRealData: trending.length > 0 }
+        const rest = allProducts
+          .filter((p: any) => !trendingIds.has(p.id))
+          .slice(0, 12 - trending.length)
+        products = [...trending, ...rest]
+      } else {
+        products = trending.slice(0, 12)
       }
-      return { products: trending.slice(0, 12), hasRealData: true }
+      hasRealData = trending.length > 0
+    } else {
+      // Step 4 — no order data yet, show all products as "trending soon"
+      products = allProducts.slice(0, 12)
+      hasRealData = false
     }
 
-    // Step 4 — no order data yet, show all products as "trending soon"
-    return { products: allProducts.slice(0, 12), hasRealData: false }
+    return { products, hasRealData, activeSale: saleRow ?? null }
 
   } catch {
-    // Fallback products if everything fails
     return {
       hasRealData: false,
+      activeSale: null,
       products: [
-        { id: 'f1', title: 'Medical Heartbeat Tee', price: 29.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Medical+Tee', images: [], category: 'tshirts', description: 'Classic medical design', variants: [] },
-        { id: 'f2', title: 'Doctor Life Hoodie', price: 49.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Doctor+Hoodie', images: [], category: 'hoodies', description: 'Cozy hoodie', variants: [] },
-        { id: 'f3', title: 'Stethoscope Mug', price: 19.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Medico+Mug', images: [], category: 'mugs', description: 'Start your shift right', variants: [] },
-        { id: 'f4', title: 'Nurse Pride Tee', price: 27.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Nurse+Tee', images: [], category: 'tshirts', description: 'For heroes in scrubs', variants: [] },
-      ]
+        { id: 'f1', title: 'Medical Heartbeat Tee',  price: 29.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Medical+Tee',    images: [], category: 'tshirts', description: 'Classic medical design', variants: [] },
+        { id: 'f2', title: 'Doctor Life Hoodie',      price: 49.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Doctor+Hoodie',  images: [], category: 'hoodies', description: 'Cozy hoodie',           variants: [] },
+        { id: 'f3', title: 'Stethoscope Mug',         price: 19.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Medico+Mug',     images: [], category: 'mugs',    description: 'Start your shift right', variants: [] },
+        { id: 'f4', title: 'Nurse Pride Tee',         price: 27.99, image: 'https://via.placeholder.com/400x400/1A3A8F/ffffff?text=Nurse+Tee',      images: [], category: 'tshirts', description: 'For heroes in scrubs',   variants: [] },
+      ],
     }
   }
 }
 
 export default async function TrendingPage() {
-  const { products, hasRealData } = await getTrendingProducts()
+  const { products, hasRealData, activeSale } = await getTrendingProducts()
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
@@ -104,6 +147,12 @@ export default async function TrendingPage() {
         <span className="bg-green-50 text-green-700 text-sm font-semibold px-4 py-1.5 rounded-full">✅ Quality Guaranteed</span>
         {hasRealData && (
           <span className="bg-orange-50 text-orange-600 text-sm font-semibold px-4 py-1.5 rounded-full">📊 Ranked by Orders</span>
+        )}
+        {/* May 17, 2026 REASON: Show sale badge if a sale is active — matches ShopClient behaviour */}
+        {activeSale && (
+          <span className="bg-green-50 text-green-700 text-sm font-semibold px-4 py-1.5 rounded-full">
+            🏷️ {activeSale.name} — {activeSale.discount_percent}% OFF
+          </span>
         )}
       </div>
 
@@ -132,7 +181,15 @@ export default async function TrendingPage() {
                   {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
                 </div>
               )}
-              <ProductCard product={product} />
+              {/* May 17, 2026 REASON: Pass activeSale so ProductCard shows correct discount badge
+                  and strikethrough price. isMember=false — server component cannot read auth state.
+                  Member discount applies at cart/checkout, same as ShopClient/HomeClient. */}
+              <ProductCard
+                product={product}
+                isFirstCard={index === 0}
+                activeSale={activeSale}
+                isMember={false}
+              />
             </div>
           ))}
         </div>
