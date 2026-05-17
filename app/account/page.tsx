@@ -325,7 +325,7 @@ export default function AccountPage() {
 
       {/* Tab content — each tab is its own component */}
       {activeTab === 'overview'   && <ProfileTab user={user} isMember={isMember} />}
-      {activeTab === 'orders'     && <OrdersTab userId={user.id} />}
+      {activeTab === 'orders'     && <OrdersTab userId={user.id} accessToken={accessTokenRef.current} />}
       {activeTab === 'wishlist'   && <WishlistTab userId={user.id} />}
       {activeTab === 'addresses'  && <AddressTab />}
 
