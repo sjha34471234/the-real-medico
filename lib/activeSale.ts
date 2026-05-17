@@ -2,9 +2,9 @@
 // FILE: lib/activeSale.ts
 // PURPOSE: Fetch the active sale and check if a given product
 //   is covered by it (scope: all / specific / category)
-// LAST CHANGED: May 14, 2026
+// LAST CHANGED: May 17, 2026
 // WHY IT EXISTS: Multiple components (Navbar, Homepage, Shop,
-//   Product, Cart) all need the same sale + scope-check logic.
+//   Product, Cart, Trending) all need the same sale + scope-check logic.
 //   Centralising here prevents drift between components.
 // DEPENDENCIES: /api/sales/active route
 // ⚠️ DO NOT CHANGE: getDiscountedPrice handles member vs sale
@@ -13,6 +13,11 @@
 // ⚠️ DO NOT CHANGE: fetch uses cache:'no-store' — CDN was caching
 //   null responses and serving them after a sale was created.
 //   s-maxage CDN cache removed from the API route for same reason.
+// ⚠️ DO NOT CHANGE: URL construction uses typeof window check.
+//   window.location.origin does not exist on the server — using it
+//   caused fetchActiveSale to throw on SSR, catch returned null,
+//   and sales never showed on server-rendered pages (trending, shop).
+//   Client uses relative URL. Server uses NEXT_PUBLIC_SITE_URL.
 // ============================================================
 
 // --- CHANGE LOG ---
@@ -22,10 +27,18 @@
 // [May 14, 2026] FIXED: Sale active in DB but /api/sales/active returned null
 // ROOT CAUSE: Vercel CDN was caching the empty { sale: null } response
 //   (Cache-Control: s-maxage=60) from before the sale was created.
-//   All client fetches were hitting the CDN cached null for up to 60s+.
 // FIX 1: fetchActiveSale now uses cache:'no-store' — bypasses CDN/browser cache
-// FIX 2: Module-level TTL cache reduced to 30s (was 60s) — matches real use
-// FIX 3: API route (app/api/sales/active/route.ts) Cache-Control removed
+// FIX 2: Module-level TTL cache reduced to 30s (was 60s)
+// FIX 3: API route Cache-Control removed
+//
+// [May 17, 2026] FIXED: Sale not loading on server-rendered pages (trending, shop)
+// ROOT CAUSE: `window.location.origin` throws on the server — window is undefined.
+//   fetchActiveSale was called from server components, hit the catch block,
+//   returned null, so sales never applied on SSR pages.
+// FIX: typeof window check — client uses relative URL '/api/sales/active',
+//   server uses `${process.env.NEXT_PUBLIC_SITE_URL}/api/sales/active`.
+//   Module-level cache only runs on client (server has no persistent module state
+//   between requests on Vercel), so cache guard is now inside the client branch.
 // --- END CHANGE LOG ---
 
 export interface ActiveSale {
@@ -41,28 +54,48 @@ export interface ActiveSale {
   status: string
 }
 
-// [May 14, 2026] REASON: Module-level cache still used to prevent
-// re-fetching on every component render within the same page load.
-// TTL reduced to 30s — short enough to pick up new sales quickly.
+// [May 14, 2026] REASON: Module-level cache prevents re-fetching on every
+// component render within the same client-side page load.
+// [May 17, 2026] NOTE: This cache only applies on the client — Vercel spins up
+// a fresh module instance per server request, so _cache is always null on SSR.
+// Server-side caching is handled by Next.js fetch cache (revalidate: 30).
 let _cache: { sale: ActiveSale | null; fetchedAt: number } | null = null
 const CACHE_TTL_MS = 30_000
 
 export async function fetchActiveSale(): Promise<ActiveSale | null> {
-  const now = Date.now()
-  if (_cache && now - _cache.fetchedAt < CACHE_TTL_MS) {
-    return _cache.sale
+  // ── Client-side path ──────────────────────────────────────────────────────
+  if (typeof window !== 'undefined') {
+    const now = Date.now()
+    if (_cache && now - _cache.fetchedAt < CACHE_TTL_MS) {
+      return _cache.sale
+    }
+    try {
+      // May 17, 2026 REASON: Relative URL — safe on client, works on all domains
+      //   (localhost, preview URLs, production). No window.location.origin needed.
+      const res = await fetch('/api/sales/active', { cache: 'no-store' })
+      if (!res.ok) return null
+      const json = await res.json()
+      _cache = { sale: json.sale ?? null, fetchedAt: now }
+      return _cache.sale
+    } catch {
+      return null
+    }
   }
+
+  // ── Server-side path ──────────────────────────────────────────────────────
+  // May 17, 2026 REASON: On the server (SSR / server components), window is
+  //   undefined. Must use an absolute URL. NEXT_PUBLIC_SITE_URL is always set
+  //   in Vercel env vars (https://therealmedico.store).
+  //   next: { revalidate: 30 } gives server-side 30s cache equivalent to
+  //   the client module cache — prevents hammering Supabase on every SSR render.
   try {
-    // [May 14, 2026] FIX: cache:'no-store' bypasses Vercel CDN and browser cache.
-    // Previously the CDN cached { sale: null } and served it even after a sale was created.
-    const res = await fetch(
-      `${window.location.origin}/api/sales/active`,
-      { cache: 'no-store' }
-    )
+    const base = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://therealmedico.store'
+    const res = await fetch(`${base}/api/sales/active`, {
+      next: { revalidate: 30 },
+    })
     if (!res.ok) return null
     const json = await res.json()
-    _cache = { sale: json.sale ?? null, fetchedAt: now }
-    return _cache.sale
+    return json.sale ?? null
   } catch {
     return null
   }
