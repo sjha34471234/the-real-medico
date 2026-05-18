@@ -1,15 +1,15 @@
 // ============================================================
 // FILE: app/api/razorpay/validate-discount/route.ts
-// PURPOSE: Orchestrates server-side discount + amount validation — returns HMAC-signed token.
-//   Pure orchestration: reads from DB, calls lib functions, returns token.
-// LAST CHANGED: May 17, 2026
+// PURPOSE: Server-side discount + amount validation — returns HMAC-signed token
+// LAST CHANGED: May 16, 2026
 // WHY IT EXISTS: Prevent client-side price tampering. Server re-computes everything,
 //   returns signed token. create-order only accepts that token — never a raw amount.
-// DEPENDENCIES: lib/rateLimit.ts, lib/shipping.ts, lib/hmac.ts,
-//   Supabase (service role), currency_rates table
+// DEPENDENCIES:
+//   - lib/rateLimit.ts (rate limiting)
+//   - lib/hmac.ts (signToken, TOKEN_TTL_MS)
+//   - lib/shipping.ts (getShippingChargeINR)
+//   - Supabase service role (membership check, sale fetch, currency rates)
 // ⚠️ DO NOT CHANGE: Reads peak_rate from currency_rates — NOT hardcoded rates.
-//   UI and server use identical rate → no price mismatch possible.
-// ⚠️ DO NOT CHANGE: Token TTL 5 minutes — do not increase (replay attack window)
 // ⚠️ DO NOT CHANGE: Highest-wins rule — Math.max(saleDiscount, memberDiscount)
 // ⚠️ DO NOT CHANGE: membership uses boolean .eq('active', true)
 // ⚠️ DO NOT CHANGE: maybeSingle() not single() — single() throws on no row
@@ -17,23 +17,19 @@
 
 // --- CHANGE LOG ---
 // [May 15, 2026] CREATED: Server-side discount enforcement
-// REASON: Client was computing razorpayAmount itself — anyone with DevTools
-//   could set amount=100 (1 paise) and get a valid Razorpay order.
-// [May 15, 2026] UPDATED: Replaced hardcoded USD_RATES with Supabase peak_rate lookup
-// REASON: Hardcoded rates (83 INR/USD) caused mismatch vs live UI rates (~95 INR/USD).
-// [May 16, 2026] CHANGED: Removed inline rate limiter, now uses shared lib/rateLimit.ts
-// REASON: Each route had its own copy — centralised in lib/rateLimit.ts.
-// [May 17, 2026] REFACTORED: Extracted shipping logic → lib/shipping.ts, HMAC → lib/hmac.ts
-// REASON: Modular architecture mandate. Route now orchestrates only — no inline logic.
+// REASON: Client was computing razorpayAmount itself — tamper risk.
+// [May 15, 2026] UPDATED: Replaced hardcoded rates with Supabase peak_rate lookup
+// [May 16, 2026] UPDATED: Migrated to shared lib/rateLimit.ts
+// [May 16, 2026] UPDATED: Extracted signToken → lib/hmac.ts, shipping → lib/shipping.ts
+// REASON: Modular architecture mandate — this file is now an orchestrator only.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkRateLimit, getClientIp, rateLimitResponse, RATE_LIMITS } from '@/lib/rateLimit'
-import { getShippingChargeINR, isProductInSale } from '@/lib/shipping'
 import { signToken, TOKEN_TTL_MS } from '@/lib/hmac'
+import { getShippingChargeINR } from '@/lib/shipping'
 
-// May 15, 2026 REASON: Service role — membership verify + currency_rates read
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -43,30 +39,43 @@ type CurrencyCode = 'INR' | 'USD' | 'GBP' | 'AED' | 'SGD' | 'MYR' | 'AUD' | 'CAD
 
 const SUPPORTED_CURRENCIES: CurrencyCode[] = ['INR', 'USD', 'GBP', 'AED', 'SGD', 'MYR', 'AUD', 'CAD']
 
-// May 15, 2026 REASON: Last-resort fallback only — used if Supabase is unreachable.
-//   In normal operation these are NEVER used — Supabase peak rates are used instead.
 const FALLBACK_RATES: Record<CurrencyCode, number> = {
   INR: 95, USD: 1, GBP: 0.79, AED: 3.67,
   SGD: 1.34, MYR: 4.7, AUD: 1.53, CAD: 1.36,
 }
 
+// [May 16, 2026] REASON: Kept here — only used by this route.
+//   If a second route ever needs it, move to lib/activeSale.ts at that point.
+function isProductInSale(
+  sale: { scope: string; product_ids: string[] | null; category: string | null },
+  productId: string,
+): boolean {
+  if (sale.scope === 'all') return true
+  if (sale.scope === 'specific') {
+    return Array.isArray(sale.product_ids) && sale.product_ids.includes(productId)
+  }
+  if (sale.scope === 'category') return true
+  return false
+}
+
 interface CartItem {
   id: string
   title: string
-  price: number    // base USD price (pre-discount)
+  price: number
   quantity: number
   size: string
   image: string
 }
 
 export async function POST(req: Request) {
+  // ── 1. Rate limit ─────────────────────────────────────────────────────────
   const ip = getClientIp(req)
   if (!checkRateLimit(ip, 'razorpayValidate')) {
     return rateLimitResponse(RATE_LIMITS.razorpayValidate.windowMs)
   }
 
   try {
-    // ── 1. Parse and validate body ────────────────────────────────────────────
+    // ── 2. Parse + validate body ──────────────────────────────────────────────
     const body = await req.json().catch(() => null)
     if (!body || !Array.isArray(body.items) || body.items.length === 0) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
@@ -94,8 +103,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // ── 2. Load peak rates from Supabase ──────────────────────────────────────
-    // May 15, 2026 REASON: CRITICAL — must use same rates as currencyStore UI.
+    // ── 3. Load peak rates from Supabase ──────────────────────────────────────
     let peakRates: Record<CurrencyCode, number> = { ...FALLBACK_RATES }
     try {
       const { data: rateRows, error: rateError } = await supabaseAdmin
@@ -108,7 +116,7 @@ export async function POST(req: Request) {
             peakRates[row.currency as CurrencyCode] = Number(row.peak_rate)
           }
         }
-        peakRates['USD'] = 1 // Always 1 — base currency
+        peakRates['USD'] = 1
       } else {
         console.warn('[validate-discount] currency_rates fetch issue — using fallback rates')
       }
@@ -116,7 +124,7 @@ export async function POST(req: Request) {
       console.warn('[validate-discount] currency_rates unreachable — using fallback rates:', e)
     }
 
-    // ── 3. Verify user session ────────────────────────────────────────────────
+    // ── 4. Auth check ─────────────────────────────────────────────────────────
     const authHeader = req.headers.get('authorization') ?? ''
     const accessToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
 
@@ -126,20 +134,19 @@ export async function POST(req: Request) {
       if (!error && user) userId = user.id
     }
 
-    // ── 4. Check membership server-side ──────────────────────────────────────
-    // May 15, 2026 REASON: Never trust isMember from client — always re-verify
+    // ── 5. Membership check ───────────────────────────────────────────────────
     let isMember = false
     if (userId) {
       const { data: membership } = await supabaseAdmin
         .from('memberships')
         .select('id')
         .eq('user_id', userId)
-        .eq('active', true)   // boolean column — NOT .eq('status','active')
-        .maybeSingle()        // not .single() — throws PGRST116 on no row
+        .eq('active', true)
+        .maybeSingle()
       if (membership) isMember = true
     }
 
-    // ── 5. Fetch active sale server-side ──────────────────────────────────────
+    // ── 6. Active sale ────────────────────────────────────────────────────────
     const now = new Date().toISOString()
     const { data: saleRow } = await supabaseAdmin
       .from('sales')
@@ -151,7 +158,7 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle()
 
-    // ── 6. Compute discounted subtotal (highest-wins rule per item) ───────────
+    // ── 7. Compute discounted subtotal ────────────────────────────────────────
     let subtotalUSD = 0
     let discountedSubtotalUSD = 0
 
@@ -160,8 +167,7 @@ export async function POST(req: Request) {
       const saleDiscount = saleRow && isProductInSale(saleRow, item.id)
         ? saleRow.discount_percent
         : 0
-      const memberDiscount = isMember ? 15 : 0
-      const effectiveDiscount = Math.max(saleDiscount, memberDiscount)
+      const effectiveDiscount = Math.max(saleDiscount, isMember ? 15 : 0)
       const lineDiscountedUSD = effectiveDiscount > 0
         ? lineBaseUSD * (1 - effectiveDiscount / 100)
         : lineBaseUSD
@@ -172,16 +178,13 @@ export async function POST(req: Request) {
 
     const savingsUSD = subtotalUSD - discountedSubtotalUSD
 
-    // ── 7. Compute shipping using lib/shipping.ts ─────────────────────────────
-    // May 15, 2026 REASON: Shipping defined in INR — convert to USD via INR peak rate,
-    //   then to target currency. All using Supabase peak rates (same as UI).
+    // ── 8. Shipping via lib/shipping.ts ───────────────────────────────────────
     const shippingINR = getShippingChargeINR(country, isMember)
     const shippingUSD = shippingINR / peakRates['INR']
 
-    // ── 8. Convert total to payment currency ──────────────────────────────────
+    // ── 9. Convert to payment currency ───────────────────────────────────────
     const targetRate = peakRates[currency]
-    const totalUSD = discountedSubtotalUSD + shippingUSD
-    const totalSmallest = Math.round(totalUSD * targetRate * 100)
+    const totalSmallest = Math.round((discountedSubtotalUSD + shippingUSD) * targetRate * 100)
 
     if (totalSmallest < 100) {
       return NextResponse.json(
@@ -190,7 +193,7 @@ export async function POST(req: Request) {
       )
     }
 
-    // ── 9. Sign token via lib/hmac.ts ─────────────────────────────────────────
+    // ── 10. Sign token via lib/hmac.ts ────────────────────────────────────────
     const tokenPayload = {
       amount: totalSmallest,
       currency,
@@ -203,14 +206,11 @@ export async function POST(req: Request) {
       isMember,
       saleId: saleRow?.id ?? null,
       saleName: saleRow?.name ?? null,
-      // May 15, 2026 REASON: Store the peak rate used — useful for order reconciliation
       peakRateUsed: targetRate,
     }
 
-    const validationToken = signToken(tokenPayload)
-
     return NextResponse.json({
-      validationToken,
+      validationToken: signToken(tokenPayload),
       subtotalUSD: tokenPayload.subtotalUSD,
       discountedSubtotalUSD: tokenPayload.discountedSubtotalUSD,
       savingsUSD: tokenPayload.savingsUSD,
@@ -226,9 +226,6 @@ export async function POST(req: Request) {
 
   } catch (err: any) {
     console.error('[validate-discount] error:', err?.message ?? err)
-    return NextResponse.json(
-      { error: 'Validation failed. Please try again.' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Validation failed. Please try again.' }, { status: 500 })
   }
 }
