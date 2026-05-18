@@ -1,27 +1,27 @@
 // ============================================================
 // FILE: app/api/razorpay/create-order/route.ts
-// PURPOSE: Creates Razorpay order using only server-validated amount from signed token.
-//   Pure orchestration — verifies token via lib/hmac.ts, calls Razorpay, returns order.
-// LAST CHANGED: May 17, 2026
+// PURPOSE: Create Razorpay order using only server-validated amount from signed token
+// LAST CHANGED: May 16, 2026
 // WHY IT EXISTS: Handles Razorpay order creation for checkout payment flow.
-// DEPENDENCIES: lib/rateLimit.ts, lib/hmac.ts, razorpay npm package,
-//   RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, ADMIN_JWT_SECRET
+//   Amount comes exclusively from a server-signed validation token — never from client.
+// DEPENDENCIES:
+//   - lib/rateLimit.ts (rate limiting)
+//   - lib/hmac.ts (verifyAndDecodeToken)
+//   - razorpay npm package
+//   - RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET
 // ⚠️ DO NOT CHANGE: NEVER accept a raw `amount` from the client.
-//   All amounts must come via a validationToken from /api/razorpay/validate-discount.
-//   This is the core of the tamper-prevention system.
-// ⚠️ DO NOT CHANGE: Token expiry check — do not remove or increase the 5-min TTL.
-// ⚠️ DO NOT CHANGE: Timing-safe HMAC comparison lives in lib/hmac.ts — do not inline it.
+//   All amounts come via validationToken from /api/razorpay/validate-discount.
+// ⚠️ DO NOT CHANGE: Token expiry check — do not remove or extend the TTL check.
 // ============================================================
 
 // --- CHANGE LOG ---
 // [May 15, 2026] CHANGED: No longer accepts raw `amount` from client
-// REASON: Client could send any amount (e.g. 1 paise) and get a real Razorpay order.
-//   Now requires a validationToken signed by /api/razorpay/validate-discount.
+// REASON: Client could send any amount and get a real Razorpay order.
 // [May 16, 2026] ADDED: Rate limiting via shared lib/rateLimit.ts
-// REASON: Route had no rate limit — attacker could hammer it to burn Razorpay quota.
-// [May 17, 2026] REFACTORED: HMAC verify extracted to lib/hmac.ts
-// REASON: Modular architecture mandate. Route now imports verifyAndDecodeToken()
-//   instead of owning the inline implementation.
+// REASON: Route had no rate limit at all.
+// [May 16, 2026] UPDATED: Extracted verifyAndDecodeToken → lib/hmac.ts
+// REASON: Modular architecture mandate — HMAC logic lives in one place.
+//   This file is now an orchestrator only.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
@@ -30,22 +30,20 @@ import { checkRateLimit, getClientIp, rateLimitResponse, RATE_LIMITS } from '@/l
 import { verifyAndDecodeToken } from '@/lib/hmac'
 
 export async function POST(req: Request) {
-  // [May 16, 2026] REASON: Rate limit before any token processing —
-  //   stops probing even before we touch the HMAC logic
+  // ── 1. Rate limit ─────────────────────────────────────────────────────────
   const ip = getClientIp(req)
   if (!checkRateLimit(ip, 'razorpayCreateOrder')) {
     return rateLimitResponse(RATE_LIMITS.razorpayCreateOrder.windowMs)
   }
 
   try {
+    // ── 2. Parse body ─────────────────────────────────────────────────────────
     const body = await req.json().catch(() => null)
     if (!body) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
 
-    // ── 1. Require validationToken — reject raw amount ────────────────────────
-    // May 15, 2026 REASON: This is the enforcement gate.
-    //   Old code trusted client-supplied amount. New code: amount comes ONLY from token.
+    // ── 3. Require validationToken — reject raw amount ────────────────────────
     const { validationToken } = body
     if (!validationToken || typeof validationToken !== 'string') {
       return NextResponse.json(
@@ -54,7 +52,7 @@ export async function POST(req: Request) {
       )
     }
 
-    // ── 2. Verify HMAC signature via lib/hmac.ts ──────────────────────────────
+    // ── 4. Verify HMAC signature via lib/hmac.ts ──────────────────────────────
     const payload = verifyAndDecodeToken(validationToken)
     if (!payload) {
       return NextResponse.json(
@@ -63,28 +61,25 @@ export async function POST(req: Request) {
       )
     }
 
-    // ── 3. Check token expiry (5-minute TTL) ──────────────────────────────────
-    // May 15, 2026 REASON: Prevents replay attacks — token cannot be reused after 5 min.
+    // ── 5. Check token expiry ─────────────────────────────────────────────────
+    // [May 15, 2026] REASON: 5-min TTL prevents replay attacks.
+    //   Expiry is set in the payload by validate-discount using TOKEN_TTL_MS from lib/hmac.ts.
     if (Date.now() > payload.expiresAt) {
       return NextResponse.json(
-        { error: 'Validation token has expired. Please refresh your cart and try again.' },
+        { error: 'Validation token expired. Please refresh your cart and try again.' },
         { status: 400 }
       )
     }
 
-    // ── 4. Extract validated values from token ────────────────────────────────
+    // ── 6. Extract validated amount from token ────────────────────────────────
     const { amount: totalSmallest, currency } = payload
 
-    if (
-      typeof totalSmallest !== 'number' ||
-      totalSmallest < 100 ||
-      typeof currency !== 'string'
-    ) {
+    if (typeof totalSmallest !== 'number' || totalSmallest < 100 || typeof currency !== 'string') {
       return NextResponse.json({ error: 'Malformed token payload.' }, { status: 400 })
     }
 
-    // ── 5. Create Razorpay order using only the token's amount ────────────────
-    // May 15, 2026 REASON: amount comes from server-verified token — not client body
+    // ── 7. Create Razorpay order ──────────────────────────────────────────────
+    // [May 15, 2026] REASON: amount comes from verified token — never from client body
     const razorpay = new Razorpay({
       key_id: process.env.RAZORPAY_KEY_ID!,
       key_secret: process.env.RAZORPAY_KEY_SECRET!,
@@ -92,27 +87,26 @@ export async function POST(req: Request) {
 
     const order = await razorpay.orders.create({
       amount: totalSmallest,
-      currency: currency,
+      currency,
       receipt: `trm_${Date.now()}`,
       notes: {
-        // May 15, 2026 REASON: Store discount metadata in Razorpay order for reconciliation
-        is_member:   String(payload.isMember  ?? false),
-        sale_id:     String(payload.saleId    ?? ''),
-        sale_name:   String(payload.saleName  ?? ''),
+        is_member: String(payload.isMember ?? false),
+        sale_id: String(payload.saleId ?? ''),
+        sale_name: String(payload.saleName ?? ''),
         savings_usd: String(payload.savingsUSD ?? 0),
-        country:     String(payload.country   ?? ''),
+        country: String(payload.country ?? ''),
       },
     })
 
     return NextResponse.json({
-      order_id:        order.id,
-      amount:          order.amount,
-      currency:        order.currency,
-      shipping:        payload.shippingINR          ?? 0,
-      product_amount:  payload.discountedSubtotalUSD ?? 0,
-      isMember:        payload.isMember             ?? false,
-      saleName:        payload.saleName             ?? null,
-      savingsUSD:      payload.savingsUSD            ?? 0,
+      order_id: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      shipping: payload.shippingINR ?? 0,
+      product_amount: payload.discountedSubtotalUSD ?? 0,
+      isMember: payload.isMember ?? false,
+      saleName: payload.saleName ?? null,
+      savingsUSD: payload.savingsUSD ?? 0,
     })
 
   } catch (error: any) {
