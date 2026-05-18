@@ -1,18 +1,24 @@
 // ============================================================
 // FILE: app/api/razorpay/validate-discount/route.ts
 // PURPOSE: Server-side discount + amount validation — returns HMAC-signed token
-// LAST CHANGED: May 16, 2026
+// LAST CHANGED: May 19, 2026
 // WHY IT EXISTS: Prevent client-side price tampering. Server re-computes everything,
 //   returns signed token. create-order only accepts that token — never a raw amount.
 // DEPENDENCIES:
 //   - lib/rateLimit.ts (rate limiting)
 //   - lib/hmac.ts (signToken, TOKEN_TTL_MS)
 //   - lib/shipping.ts (getShippingChargeINR)
+//   - lib/coupon.ts (validateCoupon)
 //   - Supabase service role (membership check, sale fetch, currency rates)
 // ⚠️ DO NOT CHANGE: Reads peak_rate from currency_rates — NOT hardcoded rates.
-// ⚠️ DO NOT CHANGE: Highest-wins rule — Math.max(saleDiscount, memberDiscount)
+// ⚠️ DO NOT CHANGE: Coupon disables sale+member entirely — it is the ONLY discount.
+//   When couponResult is set, saleDiscount and memberDiscount are both ignored.
+// ⚠️ DO NOT CHANGE: Highest-wins rule (Math.max) only applies when NO coupon is active.
 // ⚠️ DO NOT CHANGE: membership uses boolean .eq('active', true)
 // ⚠️ DO NOT CHANGE: maybeSingle() not single() — single() throws on no row
+// ⚠️ DO NOT CHANGE: Coupon re-validated server-side here independently of client.
+//   Client passes couponCode — server re-runs full validateCoupon() from scratch.
+//   Never trust client-side coupon discount values.
 // ============================================================
 
 // --- CHANGE LOG ---
@@ -22,6 +28,8 @@
 // [May 16, 2026] UPDATED: Migrated to shared lib/rateLimit.ts
 // [May 16, 2026] UPDATED: Extracted signToken → lib/hmac.ts, shipping → lib/shipping.ts
 // REASON: Modular architecture mandate — this file is now an orchestrator only.
+// [May 19, 2026] UPDATED: Added coupon support via lib/coupon.ts
+// REASON: Coupon system Tier 3 feature — coupon disables sale+member, honoured in shipping too.
 // --- END CHANGE LOG ---
 
 import { NextResponse } from 'next/server'
@@ -29,6 +37,7 @@ import { createClient } from '@supabase/supabase-js'
 import { checkRateLimit, getClientIp, rateLimitResponse, RATE_LIMITS } from '@/lib/rateLimit'
 import { signToken, TOKEN_TTL_MS } from '@/lib/hmac'
 import { getShippingChargeINR } from '@/lib/shipping'
+import { validateCoupon } from '@/lib/coupon'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,10 +90,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
 
-    const { items, currency: rawCurrency, country: rawCountry } = body as {
+    const {
+      items,
+      currency: rawCurrency,
+      country: rawCountry,
+      // [May 19, 2026] REASON: Client passes coupon code if one is applied.
+      //   Server re-validates independently — never trusts client discount values.
+      couponCode,
+    } = body as {
       items: CartItem[]
       currency: string
       country: string
+      couponCode?: string | null
     }
 
     const currency: CurrencyCode =
@@ -158,33 +175,76 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle()
 
-    // ── 7. Compute discounted subtotal ────────────────────────────────────────
-    let subtotalUSD = 0
+    // ── 7. Coupon validation (server-side, independent of client) ─────────────
+    // [May 19, 2026] REASON: Compute raw subtotal first so validateCoupon can
+    //   enforce min_order_usd against the undiscounted cart total.
+    const rawSubtotalUSD = items.reduce(
+      (sum, item) => sum + item.price * item.quantity,
+      0
+    )
+
+    let couponResult: Awaited<ReturnType<typeof validateCoupon>> | null = null
+    if (couponCode && typeof couponCode === 'string' && couponCode.trim()) {
+      const result = await validateCoupon(couponCode.trim(), userId, isMember, rawSubtotalUSD)
+      // [May 19, 2026] REASON: If coupon is invalid server-side (expired mid-session,
+      //   just hit max uses, etc.) we silently ignore it and fall through to normal
+      //   sale/member logic. Client will still show success but server corrects the amount.
+      if (result.valid) couponResult = result
+    }
+
+    // ── 8. Compute discounted subtotal ────────────────────────────────────────
+    let subtotalUSD           = 0
     let discountedSubtotalUSD = 0
 
-    for (const item of items) {
-      const lineBaseUSD = item.price * item.quantity
-      const saleDiscount = saleRow && isProductInSale(saleRow, item.id)
-        ? saleRow.discount_percent
-        : 0
-      const effectiveDiscount = Math.max(saleDiscount, isMember ? 15 : 0)
-      const lineDiscountedUSD = effectiveDiscount > 0
-        ? lineBaseUSD * (1 - effectiveDiscount / 100)
-        : lineBaseUSD
+    if (couponResult) {
+      // [May 19, 2026] REASON: Coupon is active — it is the ONLY discount.
+      //   Sale and member discounts are both ignored entirely.
+      //   Per-item loop still needed for subtotalUSD (undiscounted base).
+      subtotalUSD = rawSubtotalUSD
 
-      subtotalUSD += lineBaseUSD
-      discountedSubtotalUSD += lineDiscountedUSD
+      if (couponResult.type === 'percent') {
+        discountedSubtotalUSD = parseFloat(
+          (subtotalUSD * (1 - couponResult.discountPercent / 100)).toFixed(2)
+        )
+      } else if (couponResult.type === 'fixed') {
+        // [May 19, 2026] REASON: Cap at subtotal — never go negative.
+        discountedSubtotalUSD = parseFloat(
+          Math.max(0, subtotalUSD - couponResult.discountUSD).toFixed(2)
+        )
+      } else {
+        // 'shipping' type — subtotal unchanged, free shipping handled in step 9
+        discountedSubtotalUSD = subtotalUSD
+      }
+    } else {
+      // [May 19, 2026] REASON: No coupon — normal per-item highest-wins logic
+      //   (sale vs member discount, whichever is higher wins per item).
+      for (const item of items) {
+        const lineBaseUSD = item.price * item.quantity
+        const saleDiscount = saleRow && isProductInSale(saleRow, item.id)
+          ? saleRow.discount_percent
+          : 0
+        const effectiveDiscount = Math.max(saleDiscount, isMember ? 15 : 0)
+        const lineDiscountedUSD = effectiveDiscount > 0
+          ? lineBaseUSD * (1 - effectiveDiscount / 100)
+          : lineBaseUSD
+
+        subtotalUSD           += lineBaseUSD
+        discountedSubtotalUSD += lineDiscountedUSD
+      }
     }
 
     const savingsUSD = subtotalUSD - discountedSubtotalUSD
 
-    // ── 8. Shipping via lib/shipping.ts ───────────────────────────────────────
-    const shippingINR = getShippingChargeINR(country, isMember)
-    const shippingUSD = shippingINR / peakRates['INR']
+    // ── 9. Shipping via lib/shipping.ts ───────────────────────────────────────
+    // [May 19, 2026] REASON: Coupon free shipping gives free shipping same as membership.
+    //   Both flags checked — no conflict, just free either way.
+    const shippingFree = isMember || (couponResult?.freeShipping ?? false)
+    const shippingINR  = getShippingChargeINR(country, shippingFree)
+    const shippingUSD  = shippingINR / peakRates['INR']
 
-    // ── 9. Convert to payment currency ───────────────────────────────────────
-    const targetRate = peakRates[currency]
-    const totalSmallest = Math.round((discountedSubtotalUSD + shippingUSD) * targetRate * 100)
+    // ── 10. Convert to payment currency ──────────────────────────────────────
+    const targetRate     = peakRates[currency]
+    const totalSmallest  = Math.round((discountedSubtotalUSD + shippingUSD) * targetRate * 100)
 
     if (totalSmallest < 100) {
       return NextResponse.json(
@@ -193,35 +253,47 @@ export async function POST(req: Request) {
       )
     }
 
-    // ── 10. Sign token via lib/hmac.ts ────────────────────────────────────────
+    // ── 11. Sign token via lib/hmac.ts ────────────────────────────────────────
     const tokenPayload = {
-      amount: totalSmallest,
+      amount:                totalSmallest,
       currency,
       country,
-      expiresAt: Date.now() + TOKEN_TTL_MS,
-      subtotalUSD: Math.round(subtotalUSD * 100) / 100,
+      expiresAt:             Date.now() + TOKEN_TTL_MS,
+      subtotalUSD:           Math.round(subtotalUSD * 100) / 100,
       discountedSubtotalUSD: Math.round(discountedSubtotalUSD * 100) / 100,
-      savingsUSD: Math.round(savingsUSD * 100) / 100,
+      savingsUSD:            Math.round(savingsUSD * 100) / 100,
       shippingINR,
       isMember,
-      saleId: saleRow?.id ?? null,
-      saleName: saleRow?.name ?? null,
-      peakRateUsed: targetRate,
+      // [May 19, 2026] REASON: Coupon fields baked into signed token so create-order
+      //   can record coupon details in the order without re-validating.
+      couponId:              couponResult?.coupon?.id   ?? null,
+      couponCode:            couponResult?.coupon?.code ?? null,
+      couponType:            couponResult?.type         ?? null,
+      freeShipping:          couponResult?.freeShipping ?? false,
+      saleId:                couponResult ? null : (saleRow?.id   ?? null),
+      saleName:              couponResult ? null : (saleRow?.name ?? null),
+      peakRateUsed:          targetRate,
     }
 
     return NextResponse.json({
-      validationToken: signToken(tokenPayload),
-      subtotalUSD: tokenPayload.subtotalUSD,
+      validationToken:       signToken(tokenPayload),
+      subtotalUSD:           tokenPayload.subtotalUSD,
       discountedSubtotalUSD: tokenPayload.discountedSubtotalUSD,
-      savingsUSD: tokenPayload.savingsUSD,
+      savingsUSD:            tokenPayload.savingsUSD,
       shippingINR,
       totalSmallest,
       currency,
       isMember,
-      saleId: saleRow?.id ?? null,
-      saleName: saleRow?.name ?? null,
-      saleDiscount: saleRow?.discount_percent ?? 0,
-      peakRateUsed: targetRate,
+      // [May 19, 2026] REASON: Return coupon details so CheckoutForm can show
+      //   the correct discount label and pass couponId to apply route post-payment.
+      couponId:              tokenPayload.couponId,
+      couponCode:            tokenPayload.couponCode,
+      couponType:            tokenPayload.couponType,
+      freeShipping:          tokenPayload.freeShipping,
+      saleId:                tokenPayload.saleId,
+      saleName:              tokenPayload.saleName,
+      saleDiscount:          couponResult ? 0 : (saleRow?.discount_percent ?? 0),
+      peakRateUsed:          targetRate,
     })
 
   } catch (err: any) {
