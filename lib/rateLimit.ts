@@ -1,7 +1,7 @@
 // ============================================================
 // FILE: lib/rateLimit.ts
 // PURPOSE: Sliding-window in-memory rate limiter for all public API routes
-// LAST CHANGED: May 16, 2026
+// LAST CHANGED: May 19, 2026
 // WHY IT EXISTS: Prevent spam/flooding on newsletter, search/log, Razorpay endpoints
 // DEPENDENCIES: None — no external service required
 // ⚠️ DO NOT CHANGE: In-memory store resets on Vercel cold starts — this is intentional.
@@ -12,6 +12,8 @@
 // --- CHANGE LOG ---
 // [May 16, 2026] CREATED: Sliding window rate limiter
 // REASON: OWASP compliance — all public endpoints need flood protection
+// [May 19, 2026] UPDATED: Added couponValidate + couponApply rate limits
+// REASON: Coupon system Tier 3 feature — new routes need flood protection
 // --- END CHANGE LOG ---
 
 type RateLimitEntry = {
@@ -47,6 +49,9 @@ export const RATE_LIMITS = {
   razorpayVerify:       { maxRequests: 5,  windowMs: 60 * 1000 },        // 5/min per IP
   razorpayCancel:       { maxRequests: 5,  windowMs: 60 * 1000 },        // 5/min per IP
   currencySync:         { maxRequests: 5,  windowMs: 60 * 1000 },        // 5/min per IP (server already hour-gates)
+  // [May 19, 2026] REASON: Coupon system routes — validate is public, apply is post-payment
+  couponValidate:       { maxRequests: 20, windowMs: 60 * 1000 },        // 20/min per IP
+  couponApply:          { maxRequests: 10, windowMs: 60 * 1000 },        // 10/min per IP
 } as const
 
 /**
