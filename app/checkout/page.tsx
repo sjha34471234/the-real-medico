@@ -3,7 +3,7 @@
 // FILE: app/checkout/page.tsx
 // PURPOSE: Shell — auth gate, empty cart guard, Razorpay script, saved address
 //   fetch, membership check. Delegates all UI to CheckoutForm.
-// LAST CHANGED: May 17, 2026
+// LAST CHANGED: May 19, 2026
 // WHY IT EXISTS: Checkout page. Refactored from ~600-line monolith to shell per
 //   modular architecture mandate (May 16, 2026).
 // DEPENDENCIES: components/checkout/CheckoutForm, cartStore, Supabase anon client
@@ -14,13 +14,19 @@
 // ⚠️ DO NOT CHANGE: Razorpay <Script> loaded here with strategy="afterInteractive".
 //   layout.tsx header detection can fail on Vercel → script never loads → payment fails.
 //   Loading here guarantees it loads exactly when the checkout page mounts.
+// ⚠️ DO NOT CHANGE: accessToken is BOTH a ref and state.
+//   Ref — for handlePayment in CheckoutForm (reads at call time, always fresh).
+//   State — so CheckoutForm re-renders when token arrives, giving CouponInput
+//   the token it needs for membership validation. Ref alone does not trigger re-render.
 // ============================================================
 
 // --- CHANGE LOG ---
 // [May 17, 2026] REFACTORED: Split ~600-line monolith into shell + components/checkout/
 // REASON: Modular architecture mandate — one file, one responsibility.
-//   Zero logic changed. Checkout form + FOMO banner → CheckoutForm.
-//   Address picker (was duplicated in steps 1 and 2) → AddressPicker.
+// [May 19, 2026] FIXED: accessToken passed as ref value (always null on first render).
+// REASON: CouponInput calls /api/coupon/validate with the token to verify membership.
+//   Refs don't trigger re-renders — CheckoutForm received null even after auth resolved.
+//   Fix: mirror the token into accessTokenState so CheckoutForm re-renders with the real token.
 // --- END CHANGE LOG ---
 
 import { useState, useEffect, useRef } from 'react'
@@ -39,15 +45,18 @@ const supabase = createClient(
 
 export default function CheckoutPage() {
   const { items, clearCart } = useCartStore()
-  const [isMember, setIsMember]           = useState(false)
+  const [isMember, setIsMember]                 = useState(false)
   const [hasOrderedBefore, setHasOrderedBefore] = useState(false)
-  const [showFOMO, setShowFOMO]           = useState(false)
-  const [currentUser, setCurrentUser]     = useState<any>(null)
-  const [savedAddresses, setSavedAddresses] = useState<any[]>([])
+  const [showFOMO, setShowFOMO]                 = useState(false)
+  const [currentUser, setCurrentUser]           = useState<any>(null)
+  const [savedAddresses, setSavedAddresses]     = useState<any[]>([])
 
-  // May 15, 2026 REASON: Store access token to send to validate-discount.
-  //   validate-discount uses it to verify membership server-side.
+  // May 19, 2026 FIX: accessToken kept as BOTH ref and state.
+  //   accessTokenRef — read by handlePayment at call time (always current, no stale closure).
+  //   accessTokenState — passed as prop so CheckoutForm re-renders when token arrives.
+  //   Without the state mirror, CouponInput always receives null and membership check fails.
   const accessTokenRef = useRef<string | null>(null)
+  const [accessTokenState, setAccessTokenState] = useState<string | null>(null)
 
   useEffect(() => {
     // May 14, 2026 FIX: onAuthStateChange — never getSession on mount (rule #10)
@@ -56,8 +65,10 @@ export default function CheckoutPage() {
         const user = session?.user ?? null
         setCurrentUser(user)
 
-        // May 15, 2026 REASON: Store access token for validate-discount Authorization header
+        // May 15, 2026 REASON: Store access token for validate-discount Authorization header.
+        // May 19, 2026 FIX: Also mirror into state so CheckoutForm re-renders with real token.
         accessTokenRef.current = session?.access_token ?? null
+        setAccessTokenState(session?.access_token ?? null)
 
         if (!user) {
           setIsMember(false)
@@ -133,7 +144,10 @@ export default function CheckoutPage() {
         hasOrderedBefore={hasOrderedBefore}
         showFOMO={showFOMO}
         onDismissFOMO={() => setShowFOMO(false)}
-        accessToken={accessTokenRef.current}
+        // May 19, 2026 FIX: Pass accessTokenState (not accessTokenRef.current) so
+        //   CheckoutForm re-renders when the token arrives after auth resolves.
+        //   CouponInput uses this to send the Bearer header for membership validation.
+        accessToken={accessTokenState}
         savedAddresses={savedAddresses}
         currentUser={currentUser}
         onPaymentSuccess={handlePaymentSuccess}
