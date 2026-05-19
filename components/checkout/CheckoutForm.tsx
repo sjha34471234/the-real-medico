@@ -3,21 +3,31 @@
 // FILE: components/checkout/CheckoutForm.tsx
 // PURPOSE: All 3 checkout steps (contact, shipping, payment) + FOMO banner.
 //   Owns form state, step navigation, and the Razorpay payment handler.
-// LAST CHANGED: May 17, 2026
+// LAST CHANGED: May 19, 2026
 // WHY IT EXISTS: Extracted from app/checkout/page.tsx as part of modular refactor.
-//   Logic is identical — only moved to own file.
 // DEPENDENCIES: cartStore, currencyStore, activeSale lib, AddressPicker component,
-//   /api/razorpay/validate-discount, /api/razorpay/create-order, /api/razorpay/verify,
-//   react-hot-toast, next/link
+//   CouponInput component, /api/razorpay/validate-discount, /api/razorpay/create-order,
+//   /api/razorpay/verify, /api/coupon/apply, react-hot-toast, next/link
 // ⚠️ DO NOT CHANGE: handlePayment calls validate-discount FIRST to get signed token.
 //   create-order only accepts validationToken — never a raw amount.
 //   This is the tamper-prevention system. Do not bypass it.
 // ⚠️ DO NOT CHANGE: discountedUSD / savingsUSD here are UI-only display values.
 //   The actual charged amount is always what comes back in the HMAC-signed token.
-// ⚠️ DO NOT CHANGE: highest-wins rule — Math.max(saleDiscount, memberDiscount)
+// ⚠️ DO NOT CHANGE: When a coupon is applied it is the ONLY discount.
+//   Sale + member discounts are zeroed out entirely. See discount calculation block.
+// ⚠️ DO NOT CHANGE: applyCoupon is called AFTER verify succeeds — never before.
+//   A failed payment must never burn a coupon.
 // ⚠️ DO NOT CHANGE: accessToken is passed from parent (onAuthStateChange in page.tsx).
 //   Do not read it from Supabase directly here — page.tsx owns auth state.
 // ============================================================
+
+// --- CHANGE LOG ---
+// [May 17, 2026] REFACTORED: Split ~600-line monolith into shell + components/checkout/
+// REASON: Modular architecture mandate — one file, one responsibility.
+// [May 19, 2026] UPDATED: Wired CouponInput — coupon disables sale+member discounts.
+//   applyCoupon called post-verify. Server re-validates coupon in validate-discount.
+// REASON: Coupon system Tier 3 feature.
+// --- END CHANGE LOG ---
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
@@ -27,6 +37,7 @@ import { useCurrencyStore, CURRENCY_CONFIG } from '@/store/currencyStore'
 import CurrencySelector from '@/components/CurrencySelector'
 import { fetchActiveSale, ActiveSale, getDiscountedPrice } from '@/lib/activeSale'
 import AddressPicker from './AddressPicker'
+import CouponInput, { CouponResult } from './CouponInput'
 
 // ── FOMO Banner ───────────────────────────────────────────────────────────────
 
@@ -143,6 +154,9 @@ export default function CheckoutForm({
   const [loading, setLoading] = useState(false)
   const [activeSale, setActiveSale] = useState<ActiveSale | null>(null)
   const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null)
+  // [May 19, 2026] REASON: Coupon state — null means no coupon applied.
+  //   When set, it is the ONLY discount (sale + member both zeroed out).
+  const [appliedCoupon, setAppliedCoupon] = useState<CouponResult | null>(null)
   const [form, setForm] = useState({
     name: '', email: '', phone: '',
     address: '', city: '', state: '', zip: '', country: 'India',
@@ -215,25 +229,52 @@ export default function CheckoutForm({
     setStep(3)
   }
 
-  // ── UI-only discount calculation (display only — NOT what gets charged) ───
-  // May 15, 2026 REASON: These values are for showing the user what they'll pay.
-  //   The actual charged amount is computed server-side in validate-discount.
+  // ── UI-only discount calculation (display only — NOT what gets charged) ────
+  // May 19, 2026 REASON: When a coupon is applied it is the ONLY discount.
+  //   Sale + member discounts are zeroed out entirely.
+  //   The actual charged amount always comes from the HMAC-signed token server-side.
   const { total } = useCartStore()
   const subtotalUSD = total()
-  const saleDiscount   = activeSale ? activeSale.discount_percent : 0
-  const memberDiscount = isMember ? 15 : 0
-  const effectiveDiscountPercent = Math.max(saleDiscount, memberDiscount)
-  const discountedUSD  = effectiveDiscountPercent > 0
-    ? getDiscountedPrice(subtotalUSD, effectiveDiscountPercent)
-    : subtotalUSD
-  const savingsUSD = subtotalUSD - discountedUSD
 
-  const memberWon = isMember && memberDiscount >= saleDiscount
-  const discountLabel = effectiveDiscountPercent > 0
-    ? memberWon
-      ? `⭐ Member Discount (15%)`
-      : `🔥 ${activeSale?.name ?? 'Sale'} (${saleDiscount}%)`
-    : null
+  let effectiveDiscountPercent: number
+  let discountedUSD:             number
+  let savingsUSD:                number
+  let memberWon:                 boolean
+  let discountLabel:             string | null
+
+  if (appliedCoupon) {
+    // Coupon active — disables sale + member discounts entirely
+    effectiveDiscountPercent = appliedCoupon.discountPercent
+    discountedUSD = appliedCoupon.type === 'fixed'
+      ? Math.max(0, subtotalUSD - appliedCoupon.discountUSD)
+      : appliedCoupon.type === 'percent'
+        ? subtotalUSD * (1 - appliedCoupon.discountPercent / 100)
+        : subtotalUSD  // 'shipping' type — subtotal unchanged, benefit is free shipping
+    savingsUSD    = subtotalUSD - discountedUSD
+    memberWon     = false
+    discountLabel = appliedCoupon.type === 'shipping'
+      ? `🏷️ Coupon "${appliedCoupon.code}" (Free Shipping)`
+      : `🏷️ Coupon "${appliedCoupon.code}" (${
+          appliedCoupon.type === 'percent'
+            ? `${appliedCoupon.discountPercent}% off`
+            : `${formatPrice(appliedCoupon.discountUSD)} off`
+        })`
+  } else {
+    // No coupon — normal highest-wins: sale vs member
+    const saleDiscount   = activeSale ? activeSale.discount_percent : 0
+    const memberDiscount = isMember ? 15 : 0
+    effectiveDiscountPercent = Math.max(saleDiscount, memberDiscount)
+    discountedUSD  = effectiveDiscountPercent > 0
+      ? getDiscountedPrice(subtotalUSD, effectiveDiscountPercent)
+      : subtotalUSD
+    savingsUSD     = subtotalUSD - discountedUSD
+    memberWon      = isMember && memberDiscount >= saleDiscount
+    discountLabel  = effectiveDiscountPercent > 0
+      ? memberWon
+        ? `⭐ Member Discount (15%)`
+        : `🔥 ${activeSale?.name ?? 'Sale'} (${saleDiscount}%)`
+      : null
+  }
 
   // ── Payment handler with server-side validation ───────────────────────────
   const handlePayment = async () => {
@@ -252,15 +293,18 @@ export default function CheckoutForm({
         },
         body: JSON.stringify({
           items: items.map(item => ({
-            id: item.id,
-            title: item.title,
-            price: item.price,     // base USD — pre-discount
+            id:       item.id,
+            title:    item.title,
+            price:    item.price,
             quantity: item.quantity,
-            size: item.size,
-            image: item.image,
+            size:     item.size,
+            image:    item.image,
           })),
           currency,
           country: form.country,
+          // [May 19, 2026] REASON: Pass coupon code so server re-validates independently.
+          //   Server never trusts client discount values — re-runs validateCoupon() from scratch.
+          couponCode: appliedCoupon?.code ?? null,
         }),
       })
 
@@ -296,29 +340,46 @@ export default function CheckoutForm({
       const orderData = await orderRes.json()
 
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-        amount: orderData.amount,
-        currency: orderData.currency,
-        name: 'The Real Medico',
+        key:         process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount:      orderData.amount,
+        currency:    orderData.currency,
+        name:        'The Real Medico',
         description: `Order of ${items.length} item(s)${effectiveDiscountPercent > 0 ? ` — ${effectiveDiscountPercent}% discount applied` : ''}`,
-        order_id: orderData.order_id,
-        prefill: { name: form.name, email: form.email, contact: form.phone },
+        order_id:    orderData.order_id,
+        prefill:     { name: form.name, email: form.email, contact: form.phone },
         notes: {
-          address: `${form.address}, ${form.city}, ${form.state} ${form.zip}, ${form.country}`,
-          is_member: String(orderData.isMember ?? isMember),
+          address:          `${form.address}, ${form.city}, ${form.state} ${form.zip}, ${form.country}`,
+          is_member:        String(orderData.isMember ?? isMember),
           discount_percent: String(effectiveDiscountPercent),
-          sale_name: orderData.saleName ?? activeSale?.name ?? null,
-          savings_usd: String(serverSavingsUSD ?? savingsUSD),
+          sale_name:        orderData.saleName ?? activeSale?.name ?? null,
+          savings_usd:      String(serverSavingsUSD ?? savingsUSD),
+          // [May 19, 2026] REASON: Record coupon code in Razorpay notes for audit trail.
+          coupon_code:      appliedCoupon?.code ?? null,
         },
         theme: { color: '#1A3A8F' },
         handler: async (response: any) => {
           const verifyRes = await fetch('/api/razorpay/verify', {
-            method: 'POST',
+            method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...response, items, customer: form }),
+            body:    JSON.stringify({ ...response, items, customer: form }),
           })
           const verifyData = await verifyRes.json()
           if (verifyData.verified) {
+            // [May 19, 2026] REASON: Record coupon use AFTER payment is verified.
+            //   Never apply before verify — a failed payment must never burn a coupon.
+            if (appliedCoupon && accessToken) {
+              await fetch('/api/coupon/apply', {
+                method:  'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization:  `Bearer ${accessToken}`,
+                },
+                body: JSON.stringify({
+                  couponId: appliedCoupon.couponId,
+                  orderId:  response.razorpay_order_id,
+                }),
+              })
+            }
             onPaymentSuccess()
           } else {
             toast.error('Payment verification failed')
@@ -346,17 +407,29 @@ export default function CheckoutForm({
 
   return (
     <>
-      {/* Discount applied banner */}
-      {effectiveDiscountPercent > 0 && (
+      {/* Discount applied banner — coupon OR sale/member */}
+      {(effectiveDiscountPercent > 0 || appliedCoupon?.type === 'shipping') && (
         <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 flex items-center gap-3">
-          <span className="text-2xl">{memberWon ? '⭐' : '🔥'}</span>
+          <span className="text-2xl">
+            {appliedCoupon ? '🏷️' : memberWon ? '⭐' : '🔥'}
+          </span>
           <div>
             <p className="font-bold text-green-800">
-              {memberWon ? 'Real Medico+ Discount Applied!' : `${activeSale?.name} Sale Applied!`}
+              {appliedCoupon
+                ? `Coupon "${appliedCoupon.code}" Applied!`
+                : memberWon
+                  ? 'Real Medico+ Discount Applied!'
+                  : `${activeSale?.name} Sale Applied!`}
             </p>
             <p className="text-green-700 text-sm">
-              You're saving <strong>{formatPrice(savingsUSD)}</strong> on this order (
-              {effectiveDiscountPercent}% {memberWon ? 'member' : 'sale'} discount)
+              {appliedCoupon?.type === 'shipping'
+                ? 'Free shipping on this order'
+                : <>
+                    You're saving <strong>{formatPrice(savingsUSD)}</strong> on this order (
+                    {effectiveDiscountPercent}%{' '}
+                    {appliedCoupon ? 'coupon' : memberWon ? 'member' : 'sale'} discount)
+                  </>
+              }
             </p>
           </div>
         </div>
@@ -489,7 +562,7 @@ export default function CheckoutForm({
           {/* Step 3 — Payment */}
           {step === 3 && (
             <div className="space-y-4">
-              {showFOMO && !isMember && (
+              {showFOMO && !isMember && !appliedCoupon && (
                 <MembershipFOMOBanner
                   onDismiss={onDismissFOMO}
                   savings={formatPrice(subtotalUSD * 0.15)}
@@ -497,6 +570,16 @@ export default function CheckoutForm({
               )}
               <div className="card p-6 space-y-4">
                 <h2 className="text-xl font-bold">Payment</h2>
+
+                {/* [May 19, 2026] REASON: Coupon at top — visible without scrolling on mobile/iPad. */}
+                <CouponInput
+                  subtotalUSD={subtotalUSD}
+                  accessToken={accessToken}
+                  appliedCoupon={appliedCoupon}
+                  onApply={setAppliedCoupon}
+                  onRemove={() => setAppliedCoupon(null)}
+                />
+
                 <div className="bg-accent rounded-xl p-4 space-y-1 text-sm">
                   <p className="font-semibold text-text-dark">Delivering to:</p>
                   <p className="text-text-slate">{form.name} · {form.phone}</p>
@@ -507,11 +590,17 @@ export default function CheckoutForm({
                   </button>
                 </div>
 
-                {effectiveDiscountPercent > 0 && (
+                {/* Active discount confirmation */}
+                {(effectiveDiscountPercent > 0 || appliedCoupon?.type === 'shipping') && (
                   <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2 text-sm">
-                    <span>{memberWon ? '⭐' : '🔥'}</span>
+                    <span>{appliedCoupon ? '🏷️' : memberWon ? '⭐' : '🔥'}</span>
                     <span className="text-green-800 font-medium">
-                      {effectiveDiscountPercent}% {memberWon ? 'member' : 'sale'} discount applied — saving {formatPrice(savingsUSD)}
+                      {appliedCoupon?.type === 'shipping'
+                        ? `Coupon "${appliedCoupon.code}" — free shipping applied`
+                        : `${effectiveDiscountPercent}% ${
+                            appliedCoupon ? 'coupon' : memberWon ? 'member' : 'sale'
+                          } discount applied — saving ${formatPrice(savingsUSD)}`
+                      }
                     </span>
                   </div>
                 )}
@@ -569,6 +658,7 @@ export default function CheckoutForm({
           subtotalUSD={subtotalUSD}
           savingsUSD={savingsUSD}
           discountLabel={discountLabel}
+          appliedCoupon={appliedCoupon}
         />
       </div>
     </>
@@ -585,6 +675,7 @@ function OrderSummary({
   subtotalUSD,
   savingsUSD,
   discountLabel,
+  appliedCoupon,
 }: {
   isMember: boolean
   hasOrderedBefore: boolean
@@ -593,6 +684,8 @@ function OrderSummary({
   subtotalUSD: number
   savingsUSD: number
   discountLabel: string | null
+  // [May 19, 2026] REASON: Needed to show free shipping coupon label in shipping row.
+  appliedCoupon: CouponResult | null
 }) {
   const { items } = useCartStore()
   const { formatPrice } = useCurrencyStore()
@@ -628,10 +721,26 @@ function OrderSummary({
             <span>−{formatPrice(savingsUSD)}</span>
           </div>
         )}
+        {/* [May 19, 2026] REASON: Show shipping coupon saving even when subtotal discount is 0 */}
+        {appliedCoupon?.type === 'shipping' && (
+          <div className="flex justify-between text-sm font-medium" style={{ color: '#16a34a' }}>
+            <span>🏷️ Coupon "{appliedCoupon.code}"</span>
+            <span>Free Shipping</span>
+          </div>
+        )}
         <div className="flex justify-between text-sm text-text-slate">
           <span>Shipping</span>
-          <span className={isMember ? 'text-green-600 font-medium' : 'text-text-slate'}>
-            {isMember ? '✅ Free (Member)' : 'Calculated at payment'}
+          {/* [May 19, 2026] REASON: Both member and coupon free shipping show Free — no conflict. */}
+          <span className={
+            isMember || appliedCoupon?.freeShipping
+              ? 'text-green-600 font-medium'
+              : 'text-text-slate'
+          }>
+            {isMember
+              ? '✅ Free (Member)'
+              : appliedCoupon?.freeShipping
+                ? '✅ Free (Coupon)'
+                : 'Calculated at payment'}
           </span>
         </div>
         <div className="flex justify-between font-bold text-primary text-lg pt-1 border-t">
@@ -640,7 +749,7 @@ function OrderSummary({
         </div>
       </div>
 
-      {!isMember && hasOrderedBefore && (
+      {!isMember && hasOrderedBefore && !appliedCoupon && (
         <div className="mt-4 bg-primary/5 border border-primary/20 rounded-xl p-3">
           <p className="text-xs text-primary font-semibold mb-1">
             💡 Members save {formatPrice(subtotalUSD * 0.15)} on this order
