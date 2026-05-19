@@ -1,10 +1,16 @@
 // ============================================================
 // FILE: app/admin/layout.tsx
 // PURPOSE: Admin dashboard shell — sidebar nav, instant logout
-// LAST CHANGED: May 11, 2026
+// LAST CHANGED: May 19, 2026
 // WHY IT EXISTS: Shared layout for all admin/* pages
 // ⚠️ DO NOT CHANGE: window.location.href for logout — guarantees cookie cleared
 // ============================================================
+
+// --- CHANGE LOG ---
+// [May 11, 2026] CREATED: Admin shell with sidebar nav
+// [May 19, 2026] UPDATED: Added Coupons nav item
+// REASON: Coupon system Tier 3 feature — admin needs to manage coupon codes.
+// --- END CHANGE LOG ---
 
 'use client'
 import { usePathname } from 'next/navigation'
@@ -16,6 +22,7 @@ import {
   Search,
   Users,
   Tag,
+  Ticket,
   LogOut,
   Menu,
   X,
@@ -24,13 +31,15 @@ import {
 import { useState } from 'react'
 
 const NAV_ITEMS = [
-  { href: '/admin', label: 'Overview', icon: LayoutDashboard, exact: true },
-  { href: '/admin/products', label: 'Products', icon: Package },
-  { href: '/admin/reviews', label: 'Reviews', icon: MessageSquare },
-  { href: '/admin/analytics/search', label: 'Search Analytics', icon: Search },
-  { href: '/admin/analytics/subscriptions', label: 'Subscriptions', icon: Users },
-  { href: '/admin/sales', label: 'SALES+', icon: Tag },
-  { href: '/admin/setup', label: 'Change Password', icon: Settings },
+  { href: '/admin',                       label: 'Overview',          icon: LayoutDashboard, exact: true },
+  { href: '/admin/products',              label: 'Products',          icon: Package },
+  { href: '/admin/reviews',               label: 'Reviews',           icon: MessageSquare },
+  { href: '/admin/analytics/search',      label: 'Search Analytics',  icon: Search },
+  { href: '/admin/analytics/subscriptions', label: 'Subscriptions',   icon: Users },
+  { href: '/admin/sales',                 label: 'SALES+',            icon: Tag },
+  // [May 19, 2026] REASON: Coupon system — admin needs to create and manage coupons.
+  { href: '/admin/coupons',               label: 'Coupons',           icon: Ticket },
+  { href: '/admin/setup',                 label: 'Change Password',   icon: Settings },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
