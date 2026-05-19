@@ -5,22 +5,33 @@
 // LAST CHANGED: May 19, 2026
 // WHY IT EXISTS: Public endpoint called by CouponInput component on Apply click.
 // DEPENDENCIES: lib/coupon.ts, lib/rateLimit.ts
-// ⚠️ DO NOT CHANGE: Uses anon Supabase client internally (via lib/coupon.ts).
-//   This route does NOT write anything — read-only validation.
-// ⚠️ DO NOT CHANGE: isMember verified here from Authorization header —
-//   client passes accessToken, server confirms membership from DB.
-//   Do not trust isMember from request body.
+// ⚠️ DO NOT CHANGE: Uses SERVICE ROLE client for auth.getUser() + membership check.
+//   Anon client memberships query hits RLS → returns empty even for valid members.
+//   Service role bypasses RLS correctly. Same pattern as validate-discount/route.ts.
+// ⚠️ DO NOT CHANGE: isMember verified server-side from Authorization header only.
+//   Never trust isMember from request body.
 // ============================================================
 
 // --- CHANGE LOG ---
 // [May 19, 2026] CREATED: New route for coupon validation
 // REASON: Coupon system Tier 3 feature.
+// [May 19, 2026] FIXED: Switched anon client → service role client for
+//   auth.getUser() + memberships query.
+// REASON: Anon client memberships query blocked by RLS — members incorrectly
+//   identified as non-members, causing members_only coupons to reject valid members.
 // --- END CHANGE LOG ---
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { checkRateLimit, getClientIp, rateLimitResponse, RATE_LIMITS } from '@/lib/rateLimit'
 import { validateCoupon } from '@/lib/coupon'
+
+// May 19, 2026 FIX: Service role — bypasses RLS on memberships table.
+//   Module-level so it is not recreated on every request.
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(req: NextRequest) {
   // ── 1. Rate limit ─────────────────────────────────────────────────────────
@@ -35,29 +46,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
   }
 
-  const { code, subtotalUSD, currency } = body
+  const { code, subtotalUSD } = body
 
   if (typeof subtotalUSD !== 'number' || subtotalUSD <= 0) {
     return NextResponse.json({ error: 'Invalid cart total.' }, { status: 400 })
   }
 
   // ── 3. Resolve user + membership from Authorization header ────────────────
-  // May 19, 2026 REASON: Server confirms membership — never trust body.isMember.
-  let userId: string | null   = null
-  let isMember                = false
+  // May 19, 2026 FIX: Service role client for both getUser() and memberships query.
+  //   Old code used anon client — memberships query was blocked by RLS → isMember
+  //   always false → members_only coupons rejected valid members.
+  let userId: string | null = null
+  let isMember              = false
 
   const authHeader = req.headers.get('authorization')
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7)
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
 
-    const { data: { user } } = await supabase.auth.getUser(token)
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token)
     if (user) {
       userId = user.id
-      const { data: membership } = await supabase
+      const { data: membership } = await supabaseAdmin
         .from('memberships')
         .select('id')
         .eq('user_id', user.id)
