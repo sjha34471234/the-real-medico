@@ -202,11 +202,11 @@ export async function POST(req: Request) {
       //   Per-item loop still needed for subtotalUSD (undiscounted base).
       subtotalUSD = rawSubtotalUSD
 
-      if (couponResult.type === 'percent') {
+      if (couponResult.coupon!.type === 'percent') {
         discountedSubtotalUSD = parseFloat(
           (subtotalUSD * (1 - couponResult.discountPercent / 100)).toFixed(2)
         )
-      } else if (couponResult.type === 'fixed') {
+      } else if (couponResult.coupon!.type === 'fixed') {
         // [May 19, 2026] REASON: Cap at subtotal — never go negative.
         discountedSubtotalUSD = parseFloat(
           Math.max(0, subtotalUSD - couponResult.discountUSD).toFixed(2)
@@ -268,7 +268,7 @@ export async function POST(req: Request) {
       //   can record coupon details in the order without re-validating.
       couponId:              couponResult?.coupon?.id   ?? null,
       couponCode:            couponResult?.coupon?.code ?? null,
-      couponType:            couponResult?.type         ?? null,
+      couponType:            couponResult?.coupon?.type  ?? null,
       freeShipping:          couponResult?.freeShipping ?? false,
       saleId:                couponResult ? null : (saleRow?.id   ?? null),
       saleName:              couponResult ? null : (saleRow?.name ?? null),
